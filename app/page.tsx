@@ -1,65 +1,142 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { SearchForm } from "@/components/SearchForm";
+import { ResultsSection } from "@/components/ResultsSection";
+import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
+import type { PersonData } from "@/components/PersonCard";
+
+interface SearchResults {
+  jobTitle: string;
+  company: string;
+  similarRoles: PersonData[];
+  similarRolesError: boolean;
+  schoolMatches: PersonData[];
+  schoolMatchesError: boolean;
+  recruiters: PersonData[];
+  recruitersError: boolean;
+}
 
 export default function Home() {
+  const [jobUrl, setJobUrl] = useState("");
+  const [school, setSchool] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<SearchResults | null>(null);
+
+  const [enrichTarget, setEnrichTarget] = useState<PersonData | null>(null);
+  const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setResults(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobUrl, school }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong.");
+        return;
+      }
+      setResults(data);
+    } catch {
+      setError("Request failed. Check your connection.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleEnrich(person: PersonData) {
+    setEnrichTarget(person);
+    setEnrichData(null);
+    setEnrichError(null);
+    setEnrichLoading(true);
+    try {
+      const res = await fetch("/api/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkedinUrl: person.linkedinUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEnrichError(data.error ?? "Enrichment failed. Try again.");
+        return;
+      }
+      setEnrichData(data as EnrichData);
+    } catch {
+      setEnrichError("Enrichment failed. Try again.");
+    } finally {
+      setEnrichLoading(false);
+    }
+  }
+
+  function closeDrawer() {
+    setEnrichTarget(null);
+    setEnrichData(null);
+    setEnrichError(null);
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <>
+      <main className="max-w-[880px] mx-auto px-6 pt-16 pb-24">
+        {/* Wordmark */}
+        <h1 className="font-serif text-2xl text-ink mb-2">Job Intel</h1>
+        <p className="text-muted text-sm mb-16">
+          Enter a LinkedIn job posting URL and a school name to surface relevant people.
+        </p>
+
+        <SearchForm
+          jobUrl={jobUrl}
+          school={school}
+          loading={loading}
+          error={error}
+          onJobUrlChange={setJobUrl}
+          onSchoolChange={setSchool}
+          onSubmit={handleSearch}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        {results && (
+          <div className="mt-24">
+            <ResultsSection
+              title="Similar Roles"
+              people={results.similarRoles}
+              hasError={results.similarRolesError}
+              onEnrich={handleEnrich}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            <ResultsSection
+              title={`From ${school.trim() || "School"}`}
+              people={results.schoolMatches}
+              hasError={results.schoolMatchesError}
+              onEnrich={handleEnrich}
+            />
+            <ResultsSection
+              title="Recruiters"
+              people={results.recruiters}
+              hasError={results.recruitersError}
+              onEnrich={handleEnrich}
+            />
+
+            <p className="mt-24 text-dim text-xs text-center">
+              Search ~$0.24 · Enrichment $0.55
+            </p>
+          </div>
+        )}
       </main>
-    </div>
+
+      <EnrichDrawer
+        person={enrichTarget}
+        data={enrichData}
+        loading={enrichLoading}
+        error={enrichError}
+        onClose={closeDrawer}
+      />
+    </>
   );
 }
