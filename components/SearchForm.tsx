@@ -10,15 +10,13 @@ interface SearchFormProps {
   onSubmit: (e: React.FormEvent) => void;
 }
 
-function HairlineInput({
-  type,
+function MarketInput({
   value,
   onChange,
   placeholder,
   required,
   maxLength,
 }: {
-  type: string;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
@@ -26,24 +24,15 @@ function HairlineInput({
   maxLength?: number;
 }) {
   return (
-    <div
-      className="border-b border-hairline"
-      style={{ transition: "border-color 200ms ease" }}
-      onFocusCapture={(e) =>
-        ((e.currentTarget as HTMLDivElement).style.borderColor = "#1A1A1A")
-      }
-      onBlurCapture={(e) =>
-        ((e.currentTarget as HTMLDivElement).style.borderColor = "#E8E4DD")
-      }
-    >
+    <div className="border-2 border-market-black bg-white focus-within:bg-market-yellow/30">
       <input
-        type={type}
+        type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
         maxLength={maxLength}
-        className="w-full py-3 bg-transparent text-ink text-sm placeholder:text-dim outline-none"
+        className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal"
       />
     </div>
   );
@@ -59,32 +48,47 @@ export function SearchForm({
   onSubmit,
 }: SearchFormProps) {
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      <HairlineInput
-        type="url"
-        value={jobUrl}
-        onChange={onJobUrlChange}
-        placeholder="LinkedIn job URL"
-        required
-      />
-      <HairlineInput
-        type="text"
-        value={school}
-        onChange={onSchoolChange}
-        placeholder="School name"
-        required
-        maxLength={100}
-      />
+    <form onSubmit={onSubmit}>
+      <div className="border-4 border-market-black bg-market-yellow p-6">
+        <p className="font-black text-xs uppercase tracking-widest text-market-red mb-4">
+          ■ SEARCH / 搜索 ■
+        </p>
 
-      {error && <p className="text-crimson text-xs">{error}</p>}
+        <div className="space-y-3 mb-5">
+          <MarketInput
+            value={jobUrl}
+            onChange={onJobUrlChange}
+            placeholder="LinkedIn job URL (any format)"
+            required
+          />
+          <MarketInput
+            value={school}
+            onChange={onSchoolChange}
+            placeholder="School name"
+            required
+            maxLength={100}
+          />
+        </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="px-8 py-3 bg-ink text-surface text-xs uppercase tracking-[0.15em] disabled:opacity-50 hover:opacity-80"
-      >
-        {loading ? "Searching…" : "Find"}
-      </button>
+        {error && (
+          <div className="bg-market-dark-red text-white font-bold text-xs px-3 py-2 mb-4">
+            ⚠ {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-market-red text-white font-black text-base uppercase tracking-widest px-10 py-4 border-2 border-market-black hover:bg-market-dark-red disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
+          style={
+            !loading
+              ? { animation: "marketJump 2.2s ease-in-out infinite" }
+              : undefined
+          }
+        >
+          {loading ? "★ SEARCHING... ★" : "★ FIND! 搜索 ★"}
+        </button>
+      </div>
     </form>
   );
 }

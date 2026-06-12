@@ -43,11 +43,11 @@ interface EnrichDrawerProps {
   onClose: () => void;
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionBand({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-xs uppercase tracking-[0.15em] text-dim mb-3">
+    <div className="bg-market-red text-white font-black text-xs uppercase tracking-widest px-4 py-2 mt-8">
       {children}
-    </p>
+    </div>
   );
 }
 
@@ -83,7 +83,7 @@ export function EnrichDrawer({
           isOpen ? "pointer-events-auto" : "pointer-events-none"
         }`}
         style={{
-          backgroundColor: "rgba(26,26,26,0.2)",
+          backgroundColor: "rgba(26,26,26,0.6)",
           opacity: isOpen ? 1 : 0,
           transition: "opacity 200ms ease",
         }}
@@ -92,7 +92,7 @@ export function EnrichDrawer({
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-surface border-l border-hairline z-50 overflow-y-auto"
+        className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-market-bg border-l-4 border-market-black z-50 overflow-y-auto"
         style={{
           transform: isOpen ? "translateX(0)" : "translateX(100%)",
           transition: "transform 200ms ease",
@@ -101,112 +101,125 @@ export function EnrichDrawer({
         {/* Close */}
         <button
           onClick={onClose}
-          className="absolute top-6 right-6 text-muted hover:text-ink"
+          className="absolute top-4 right-4 bg-market-black text-white p-1 hover:bg-market-red"
           aria-label="Close"
         >
-          <X size={16} strokeWidth={1.5} />
+          <X size={16} strokeWidth={2} />
         </button>
 
-        <div className="px-8 pt-12 pb-16">
+        <div className="pb-16">
           {loading && (
-            <div className="mt-8">
+            <div className="px-6 pt-12">
+              <p className="font-black text-sm text-market-red uppercase tracking-widest mb-6">
+                ■ LOADING... ■
+              </p>
               <PipelineProgress steps={ENRICH_STEPS} />
             </div>
           )}
 
           {error && (
-            <p className="text-crimson text-sm mt-4">{error}</p>
+            <div className="bg-market-dark-red text-white font-bold text-sm px-6 py-4 mx-6 mt-12">
+              ⚠ {error}
+            </div>
           )}
 
           {!loading && !error && person && (
             <>
-              <h2 className="font-serif text-2xl text-ink mb-1">
-                {data?.full_name ?? person.name}
-              </h2>
-              {(data?.title ?? person.title) && (
-                <p className="text-muted text-sm mb-1">
-                  {data?.title ?? person.title}
-                </p>
-              )}
-              {data?.company && (
-                <p className="text-dim text-xs">{data.company}</p>
-              )}
+              {/* Header */}
+              <div className="bg-market-yellow border-b-4 border-market-black px-6 pt-10 pb-5">
+                <h2 className="font-black text-2xl text-market-black">
+                  {data?.full_name ?? person.name}
+                </h2>
+                {(data?.title ?? person.title) && (
+                  <p className="font-bold text-market-dark-red text-sm mt-1">
+                    {data?.title ?? person.title}
+                  </p>
+                )}
+                {data?.company && (
+                  <p className="font-bold text-market-black text-xs mt-0.5">
+                    {data.company}
+                  </p>
+                )}
+              </div>
 
-              {/* CONTACT */}
-              {(allEmails.length > 0 || phones.length > 0) && (
-                <section className="mt-12">
-                  <SectionLabel>Contact</SectionLabel>
-                  <div className="space-y-1">
-                    {allEmails.map((email) => (
-                      <p key={email} className="text-ink text-sm">
-                        <a
-                          href={`mailto:${email}`}
-                          className="hover:text-crimson"
+              <div className="px-6">
+                {/* CONTACT */}
+                {(allEmails.length > 0 || phones.length > 0) && (
+                  <>
+                    <SectionBand>■ Contact / 联系方式</SectionBand>
+                    <div className="mt-3 space-y-1">
+                      {allEmails.map((email) => (
+                        <p key={email} className="text-sm font-bold">
+                          <a
+                            href={`mailto:${email}`}
+                            className="text-market-red hover:underline"
+                          >
+                            {email}
+                          </a>
+                        </p>
+                      ))}
+                      {phones.map((phone) => (
+                        <p key={phone} className="text-sm font-bold text-ink">
+                          {phone}
+                        </p>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* EXPERIENCE */}
+                {data?.experience && data.experience.length > 0 && (
+                  <>
+                    <SectionBand>■ Experience / 工作经历</SectionBand>
+                    <div className="mt-3 space-y-4">
+                      {data.experience.map((exp, i) => (
+                        <div key={i} className="border-l-4 border-market-yellow pl-3">
+                          <p className="text-sm font-black text-ink">{exp.title}</p>
+                          <p className="text-xs font-bold text-muted">
+                            {exp.company}
+                            {exp.start_date &&
+                              ` · ${exp.start_date}–${exp.end_date ?? "present"}`}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* EDUCATION */}
+                {data?.education && data.education.length > 0 && (
+                  <>
+                    <SectionBand>■ Education / 教育背景</SectionBand>
+                    <div className="mt-3 space-y-2">
+                      {data.education.map((edu, i) => (
+                        <p
+                          key={i}
+                          className="text-sm font-bold text-ink border-l-4 border-market-red pl-3"
                         >
-                          {email}
-                        </a>
-                      </p>
-                    ))}
-                    {phones.map((phone) => (
-                      <p key={phone} className="text-ink text-sm">
-                        {phone}
-                      </p>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* EXPERIENCE */}
-              {data?.experience && data.experience.length > 0 && (
-                <section className="mt-12">
-                  <SectionLabel>Experience</SectionLabel>
-                  <div className="space-y-5">
-                    {data.experience.map((exp, i) => (
-                      <div key={i}>
-                        <p className="text-ink text-sm font-medium">
-                          {exp.title}
+                          {edu}
                         </p>
-                        <p className="text-muted text-xs">
-                          {exp.company}
-                          {exp.start_date &&
-                            ` · ${exp.start_date}–${exp.end_date ?? "present"}`}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
+                      ))}
+                    </div>
+                  </>
+                )}
 
-              {/* EDUCATION */}
-              {data?.education && data.education.length > 0 && (
-                <section className="mt-12">
-                  <SectionLabel>Education</SectionLabel>
-                  <div className="space-y-2">
-                    {data.education.map((edu, i) => (
-                      <p key={i} className="text-ink text-sm">
-                        {edu}
-                      </p>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* SKILLS */}
-              {data?.skills && data.skills.length > 0 && (
-                <section className="mt-12">
-                  <SectionLabel>Skills</SectionLabel>
-                  <div className="flex flex-wrap gap-2">
-                    {data.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="text-xs text-muted border border-hairline px-2 py-1"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                </section>
-              )}
+                {/* SKILLS */}
+                {data?.skills && data.skills.length > 0 && (
+                  <>
+                    <SectionBand>■ Skills / 技能</SectionBand>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {data.skills.map((skill) => (
+                        <span
+                          key={skill}
+                          className="text-xs font-bold text-market-black bg-market-yellow border-2 border-market-black px-2 py-0.5"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>

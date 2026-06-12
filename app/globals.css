@@ -1,26 +1,56 @@
 @import "tailwindcss";
 
 @theme {
-  --color-paper: #FAFAF7;
-  --color-surface: #FFFFFF;
-  --color-hairline: #E8E4DD;
-  --color-ink: #1A1A1A;
-  --color-muted: #737373;
-  --color-dim: #A8A29A;
-  --color-crimson: #8B2332;
+  /* Market palette */
+  --color-market-red: #E8001D;
+  --color-market-dark-red: #B50015;
+  --color-market-yellow: #FFD700;
+  --color-market-orange: #FF6600;
+  --color-market-green: #2B8A28;
+  --color-market-black: #1A1A1A;
+  --color-market-bg: #FFFEF0;
 
-  --font-serif: var(--font-mincho), "Cormorant Garamond", serif;
-  --font-sans: var(--font-inter), "Noto Sans JP", system-ui, sans-serif;
+  /* Compat tokens (used in EnrichDrawer, PersonCard, etc.) */
+  --color-paper: #FFFEF0;
+  --color-surface: #FFFFFF;
+  --color-hairline: #333333;
+  --color-ink: #1A1A1A;
+  --color-muted: #444444;
+  --color-dim: #777777;
+  --color-crimson: #E8001D;
+
+  --font-display: var(--font-anton), Impact, "Arial Black", sans-serif;
+  --font-sans: var(--font-noto), var(--font-inter), "Noto Sans JP", system-ui, sans-serif;
+  --font-serif: var(--font-noto), serif;
 }
 
 body {
-  background-color: #FAFAF7;
+  background-color: #FFFEF0;
   color: #1A1A1A;
-  font-family: var(--font-inter), "Noto Sans JP", system-ui, sans-serif;
+  font-family: var(--font-noto), var(--font-inter), system-ui, sans-serif;
 }
 
-* {
-  transition-property: color, background-color, border-color, opacity, transform;
-  transition-duration: 200ms;
-  transition-timing-function: ease;
+/* ── Animations ───────────────────────────────────────── */
+
+@keyframes marketWiggle {
+  0%, 100% { transform: scale(1) rotate(-2deg); }
+  25%       { transform: scale(1.12) rotate(2.5deg); }
+  50%       { transform: scale(1.08) rotate(-1.5deg); }
+  75%       { transform: scale(1.14) rotate(3deg); }
+}
+
+@keyframes marketJump {
+  0%, 100% { transform: scale(1) translateY(0); }
+  40%       { transform: scale(1.07) translateY(-6px); }
+  65%       { transform: scale(1.03) translateY(-2px); }
+}
+
+@keyframes marketPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.09); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
 }

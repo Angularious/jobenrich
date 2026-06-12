@@ -1,24 +1,31 @@
 import type { Metadata } from "next";
-import { Shippori_Mincho, Inter } from "next/font/google";
+import { Anton, Noto_Sans_JP, Inter } from "next/font/google";
 import "./globals.css";
 
-const mincho = Shippori_Mincho({
-  variable: "--font-mincho",
+const anton = Anton({
+  variable: "--font-anton",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: "400",
+  display: "swap",
+});
+
+const noto = Noto_Sans_JP({
+  variable: "--font-noto",
+  subsets: ["latin"],
+  weight: ["400", "700", "900"],
   display: "swap",
 });
 
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["300", "400", "500"],
+  weight: ["400", "600", "700"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Job Intel",
-  description: "Surface people related to any LinkedIn job posting.",
+  title: "Job Intel ★ 求职情报",
+  description: "Surface the people behind any LinkedIn job posting.",
 };
 
 export default function RootLayout({
@@ -27,8 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${mincho.variable} ${inter.variable}`}>
-      <body className="min-h-screen bg-paper font-sans antialiased">
+    <html lang="en" className={`${anton.variable} ${noto.variable} ${inter.variable}`}>
+      <body className="min-h-screen bg-market-bg font-sans antialiased">
         {children}
       </body>
     </html>

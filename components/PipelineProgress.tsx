@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 
 export interface ProgressStep {
   label: string;
-  /** ms after mount before this step appears */
   delay: number;
 }
 
@@ -46,24 +45,19 @@ export function PipelineProgress({ steps }: Props) {
           className="flex items-center gap-3"
           style={{
             opacity: visible[i] ? 1 : 0,
-            transform: visible[i] ? "translateY(0)" : "translateY(6px)",
-            transition: "opacity 400ms ease, transform 400ms ease",
+            transform: visible[i] ? "translateX(0)" : "translateX(-8px)",
+            transition: "opacity 350ms ease, transform 350ms ease",
           }}
         >
           <span
-            className="flex-none w-1.5 h-1.5 rounded-full bg-ink"
-            style={{ animation: "pulse 1.6s ease-in-out infinite" }}
+            className="flex-none w-2 h-2 bg-market-red border border-market-dark-red"
+            style={{ animation: "pulseDot 1.4s ease-in-out infinite" }}
           />
-          <span className="text-sm text-muted">{step.label}</span>
+          <span className="text-sm font-bold text-market-black uppercase tracking-wide">
+            {step.label}
+          </span>
         </div>
       ))}
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.25; }
-        }
-      `}</style>
     </div>
   );
 }
