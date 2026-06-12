@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callOrthogonal } from "@/lib/orthogonal";
-import { isValidLinkedInJobUrl, isValidSchool } from "@/lib/validation";
+import { canonicalizeLinkedInJobUrl, isValidSchool } from "@/lib/validation";
 
 export interface Person {
   name: string;
@@ -60,7 +60,8 @@ export async function POST(request: Request) {
 
   const { jobUrl = "", school = "" } = body;
 
-  if (!isValidLinkedInJobUrl(jobUrl)) {
+  const canonicalUrl = canonicalizeLinkedInJobUrl(jobUrl);
+  if (!canonicalUrl) {
     return NextResponse.json(
       {
         error:
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
       api: "edges",
       path: "/actions/linkedin-extract-job/run/live",
       method: "POST",
-      body: { input: { linkedin_job_url: jobUrl } },
+      body: { input: { linkedin_job_url: canonicalUrl } },
     });
     console.log(
       "[search] Job extraction response:",

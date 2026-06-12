@@ -20,12 +20,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const data = await callOrthogonal({
+    const raw = await callOrthogonal<Record<string, unknown>>({
       api: "contactout",
       path: "/v1/linkedin/enrich",
       method: "GET",
       query: { profile: linkedinUrl, profile_only: "false" },
     });
+
+    console.log("[enrich] Raw response keys:", Object.keys(raw ?? {}));
+
+    // ContactOut wraps the person data under a `profile` key
+    const data = (raw?.profile as Record<string, unknown>) ?? raw;
 
     return NextResponse.json(data);
   } catch (err) {

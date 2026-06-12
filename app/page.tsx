@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SearchForm } from "@/components/SearchForm";
 import { ResultsSection } from "@/components/ResultsSection";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
+import { PipelineProgress } from "@/components/PipelineProgress";
 import type { PersonData } from "@/components/PersonCard";
 
 interface SearchResults {
@@ -23,6 +24,18 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResults | null>(null);
+
+  const searchSteps = useMemo(
+    () => [
+      { label: "Extracting job details from LinkedIn", delay: 0 },
+      { label: "Finding people in similar roles", delay: 4000 },
+      { label: `Matching ${school.trim() || "school"} alumni`, delay: 4000 },
+      { label: "Searching for recruiters", delay: 4000 },
+    ],
+    // Captured when loading starts — school won't change mid-flight
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loading]
+  );
 
   const [enrichTarget, setEnrichTarget] = useState<PersonData | null>(null);
   const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
@@ -101,6 +114,12 @@ export default function Home() {
           onSchoolChange={setSchool}
           onSubmit={handleSearch}
         />
+
+        {loading && (
+          <div className="mt-12">
+            <PipelineProgress steps={searchSteps} />
+          </div>
+        )}
 
         {results && (
           <div className="mt-24">

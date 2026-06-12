@@ -3,6 +3,13 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { PersonData } from "./PersonCard";
+import { PipelineProgress } from "./PipelineProgress";
+
+const ENRICH_STEPS = [
+  { label: "Fetching profile data", delay: 0 },
+  { label: "Loading contact information", delay: 1100 },
+  { label: "Retrieving work history", delay: 2200 },
+];
 
 interface ContactInfo {
   emails?: string[];
@@ -102,7 +109,9 @@ export function EnrichDrawer({
 
         <div className="px-8 pt-12 pb-16">
           {loading && (
-            <p className="text-muted text-sm mt-4">Loading…</p>
+            <div className="mt-8">
+              <PipelineProgress steps={ENRICH_STEPS} />
+            </div>
           )}
 
           {error && (
