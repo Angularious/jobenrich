@@ -20,6 +20,17 @@ interface ContactOutResponse {
   profiles?: Record<string, ContactOutProfile>;
 }
 
+// Strip seasonal/intern decorations so "Fall 2026: Employer Brand Intern (September to December)"
+// becomes "Employer Brand" — a title ContactOut can actually match against.
+function simplifyJobTitle(raw: string): string {
+  return raw
+    .replace(/^(spring|summer|fall|winter|autumn)\s+\d{4}\s*:\s*/i, "")
+    .replace(/\s*\([A-Za-z]+\s+(?:to|–|-)\s+[A-Za-z]+\)[^)]*$/i, "")
+    .replace(/\s*[-–]\s*\d{4}\s*$/, "")
+    .replace(/\s+(intern(?:ship)?|co-?op(?:erative)?)\s*$/i, "")
+    .trim();
+}
+
 function extractPeople(
   profiles: Record<string, ContactOutProfile> | undefined,
   limit: number
@@ -105,6 +116,11 @@ export async function POST(request: Request) {
   const { jobTitle, companyName } = extractJobFields(jobData);
   const trimmedSchool = school.trim();
 
+  const searchTitle = simplifyJobTitle(jobTitle);
+  console.log(
+    `[search] Job title: "${jobTitle}" → simplified: "${searchTitle}", company: "${companyName}"`
+  );
+
   // Step 2: Three parallel ContactOut searches
   const [similarResult, schoolResult, recruiterResult] =
     await Promise.allSettled([
@@ -113,7 +129,7 @@ export async function POST(request: Request) {
         path: "/v1/people/search",
         method: "POST",
         body: {
-          job_title: [jobTitle],
+          job_title: [searchTitle],
           company: [companyName],
           page: 1,
           reveal_info: false,
@@ -149,13 +165,22 @@ export async function POST(request: Request) {
       }),
     ]);
 
-  if (similarResult.status === "rejected") {
+  if (similarResult.status === "fulfilled") {
+    const count = Object.keys(similarResult.value?.profiles ?? {}).length;
+    console.log(`[search] Similar roles (title="${searchTitle}"): ${count} profiles`);
+  } else {
     console.error("[search] Similar roles search failed:", similarResult.reason);
   }
-  if (schoolResult.status === "rejected") {
+  if (schoolResult.status === "fulfilled") {
+    const count = Object.keys(schoolResult.value?.profiles ?? {}).length;
+    console.log(`[search] School matches (school="${trimmedSchool}"): ${count} profiles`);
+  } else {
     console.error("[search] School matches failed:", schoolResult.reason);
   }
-  if (recruiterResult.status === "rejected") {
+  if (recruiterResult.status === "fulfilled") {
+    const count = Object.keys(recruiterResult.value?.profiles ?? {}).length;
+    console.log(`[search] Recruiters: ${count} profiles`);
+  } else {
     console.error("[search] Recruiter search failed:", recruiterResult.reason);
   }
 

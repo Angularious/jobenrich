@@ -64,7 +64,7 @@ export function SearchForm({
           <MarketInput
             value={school}
             onChange={onSchoolChange}
-            placeholder="School name"
+            placeholder="Your school"
             required
             maxLength={100}
           />

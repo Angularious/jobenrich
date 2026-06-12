@@ -12,10 +12,10 @@ const ENRICH_STEPS = [
 ];
 
 interface ContactInfo {
-  emails?: string[];
-  work_emails?: string[];
-  personal_emails?: string[];
-  phones?: string[];
+  emails?: unknown;
+  work_emails?: unknown;
+  personal_emails?: unknown;
+  phones?: unknown;
 }
 
 interface Experience {
@@ -30,9 +30,9 @@ export interface EnrichData {
   title?: string;
   company?: string;
   contact_info?: ContactInfo;
-  experience?: Experience[];
-  education?: string[];
-  skills?: string[];
+  experience?: unknown;
+  education?: unknown;
+  skills?: unknown;
 }
 
 interface EnrichDrawerProps {
@@ -49,6 +49,45 @@ function SectionBand({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+// Safely coerce an unknown value to an array of strings.
+function toStrings(val: unknown): string[] {
+  if (!val) return [];
+  if (typeof val === "string") return val ? [val] : [];
+  if (!Array.isArray(val)) return [];
+  return val.flatMap((item) => {
+    if (!item) return [];
+    if (typeof item === "string") return [item];
+    if (typeof item === "object") {
+      const o = item as Record<string, unknown>;
+      const s = o.value ?? o.number ?? o.phone ?? o.email ?? o.text ?? "";
+      return typeof s === "string" && s ? [s] : [];
+    }
+    return [];
+  });
+}
+
+// Safely coerce an unknown value to an array of Experience objects.
+function toExperiences(val: unknown): Experience[] {
+  if (!val || !Array.isArray(val)) return [];
+  return val.filter((v) => v && typeof v === "object") as Experience[];
+}
+
+// Format an education entry that may be a string or an object.
+function formatEdu(edu: unknown): string {
+  if (typeof edu === "string") return edu;
+  if (edu && typeof edu === "object") {
+    const o = edu as Record<string, unknown>;
+    return [
+      o.school_name ?? o.school ?? o.institution ?? o.name,
+      o.degree,
+      o.major ?? o.field_of_study,
+    ]
+      .filter((x): x is string => typeof x === "string" && Boolean(x))
+      .join(" · ");
+  }
+  return String(edu ?? "");
 }
 
 export function EnrichDrawer({
@@ -68,12 +107,17 @@ export function EnrichDrawer({
   }, [isOpen]);
 
   const allEmails = [
-    ...(data?.contact_info?.work_emails ?? []),
-    ...(data?.contact_info?.personal_emails ?? []),
-    ...(data?.contact_info?.emails ?? []),
+    ...toStrings(data?.contact_info?.work_emails),
+    ...toStrings(data?.contact_info?.personal_emails),
+    ...toStrings(data?.contact_info?.emails),
   ].filter((v, i, a) => a.indexOf(v) === i);
 
-  const phones = data?.contact_info?.phones ?? [];
+  const phones = toStrings(data?.contact_info?.phones);
+  const experience = toExperiences(data?.experience);
+  const education: string[] = Array.isArray(data?.education)
+    ? (data.education as unknown[]).map(formatEdu).filter(Boolean)
+    : [];
+  const skills = toStrings(data?.skills);
 
   return (
     <>
@@ -168,11 +212,11 @@ export function EnrichDrawer({
                 )}
 
                 {/* EXPERIENCE */}
-                {data?.experience && data.experience.length > 0 && (
+                {experience.length > 0 && (
                   <>
                     <SectionBand>■ Experience / 工作经历</SectionBand>
                     <div className="mt-3 space-y-4">
-                      {data.experience.map((exp, i) => (
+                      {experience.map((exp, i) => (
                         <div key={i} className="border-l-4 border-market-yellow pl-3">
                           <p className="text-sm font-black text-ink">{exp.title}</p>
                           <p className="text-xs font-bold text-muted">
@@ -187,11 +231,11 @@ export function EnrichDrawer({
                 )}
 
                 {/* EDUCATION */}
-                {data?.education && data.education.length > 0 && (
+                {education.length > 0 && (
                   <>
                     <SectionBand>■ Education / 教育背景</SectionBand>
                     <div className="mt-3 space-y-2">
-                      {data.education.map((edu, i) => (
+                      {education.map((edu, i) => (
                         <p
                           key={i}
                           className="text-sm font-bold text-ink border-l-4 border-market-red pl-3"
@@ -204,13 +248,13 @@ export function EnrichDrawer({
                 )}
 
                 {/* SKILLS */}
-                {data?.skills && data.skills.length > 0 && (
+                {skills.length > 0 && (
                   <>
                     <SectionBand>■ Skills / 技能</SectionBand>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {data.skills.map((skill) => (
+                      {skills.map((skill, i) => (
                         <span
-                          key={skill}
+                          key={i}
                           className="text-xs font-bold text-market-black bg-market-yellow border-2 border-market-black px-2 py-0.5"
                         >
                           {skill}
@@ -219,6 +263,17 @@ export function EnrichDrawer({
                     </div>
                   </>
                 )}
+
+                {/* Nothing found at all */}
+                {allEmails.length === 0 &&
+                  phones.length === 0 &&
+                  experience.length === 0 &&
+                  education.length === 0 &&
+                  skills.length === 0 && (
+                    <p className="mt-8 text-sm font-bold text-muted text-center">
+                      ── No additional data found for this profile ──
+                    </p>
+                  )}
               </div>
             </>
           )}

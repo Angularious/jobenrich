@@ -14,29 +14,28 @@ export function OrthogonalBadge({ size = 148 }: OrthogonalBadgeProps) {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Powered by Orthogonal — Try Now!"
-      style={{ display: "inline-block", textDecoration: "none" }}
+      style={{ display: "inline-block", textDecoration: "none", flexShrink: 0 }}
     >
       <div
         style={{
           width: size,
           height: size,
           clipPath: STARBURST_12,
-          backgroundColor: "#FFD700",
+          backgroundColor: "#E8001D",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           textAlign: "center",
           animation: "marketWiggle 3s ease-in-out infinite",
           cursor: "pointer",
-          flexShrink: 0,
         }}
       >
-        <div style={{ padding: "28px", lineHeight: 1.15 }}>
+        <div style={{ padding: "28px", lineHeight: 1.2 }}>
           <p
             style={{
               fontSize: size * 0.08,
               fontWeight: 900,
-              color: "#E8001D",
+              color: "#FFD700",
               margin: 0,
               letterSpacing: "0.05em",
             }}
@@ -45,9 +44,9 @@ export function OrthogonalBadge({ size = 148 }: OrthogonalBadgeProps) {
           </p>
           <p
             style={{
-              fontSize: size * 0.095,
+              fontSize: size * 0.1,
               fontWeight: 900,
-              color: "#1A1A1A",
+              color: "#FFFFFF",
               margin: 0,
               letterSpacing: "0.02em",
             }}
@@ -58,7 +57,7 @@ export function OrthogonalBadge({ size = 148 }: OrthogonalBadgeProps) {
             style={{
               fontSize: size * 0.075,
               fontWeight: 900,
-              color: "#E8001D",
+              color: "#FFD700",
               margin: "4px 0 0",
               letterSpacing: "0.04em",
             }}
