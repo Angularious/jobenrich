@@ -100,3 +100,8 @@ body {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
+
+@keyframes nbWiggle {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
+}
