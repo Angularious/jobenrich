@@ -36,7 +36,7 @@ export function PasswordGate() {
         <h1 className="font-display text-5xl text-ink leading-none uppercase tracking-tight">
           Job Intel
         </h1>
-        <p className="font-mono font-bold text-acc-yellow text-sm mt-2 uppercase tracking-wide">
+        <p className="font-mono font-bold text-acc-red text-sm mt-2 uppercase tracking-wide">
           ▌ restricted — enter password
         </p>
       </div>
@@ -45,7 +45,7 @@ export function PasswordGate() {
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="nb-card p-6" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
-            <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-yellow mb-4">
+            <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-red mb-4">
               ▌ access
             </p>
 
@@ -70,8 +70,7 @@ export function PasswordGate() {
               <button
                 type="submit"
                 disabled={loading}
-                className="nb-btn bg-acc-yellow text-base font-black text-base uppercase tracking-wider px-10 py-3 w-full"
-                style={{ ["--nb" as string]: "var(--color-line)" }}
+                className="nb-btn font-black text-sm uppercase tracking-wider px-10 py-3 w-full"
               >
                 {loading ? "Entering…" : "Enter →"}
               </button>

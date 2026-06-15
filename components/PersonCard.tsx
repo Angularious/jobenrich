@@ -11,7 +11,7 @@ export interface PersonData {
 interface PersonCardProps {
   person: PersonData;
   onEnrich: (person: PersonData) => void;
-  accent: string; // CSS color for the offset shadow / hover
+  accent: string; // CSS color for the section's accent square
   isLast?: boolean;
 }
 
@@ -49,7 +49,7 @@ export function PersonCard({ person, onEnrich, accent, isLast }: PersonCardProps
             }}
           />
         ) : (
-          <span className="text-ink font-black text-base">
+          <span className="text-ink font-black text-lg">
             {person.name ? person.name[0].toUpperCase() : "?"}
           </span>
         )}
@@ -64,7 +64,7 @@ export function PersonCard({ person, onEnrich, accent, isLast }: PersonCardProps
             href={person.linkedinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-dim text-[11px] font-mono hover:text-ink"
+            className="text-acc-blue underline text-[11px] font-mono hover:bg-acc-blue hover:text-base"
           >
             /in/{slug}
           </a>
@@ -74,8 +74,7 @@ export function PersonCard({ person, onEnrich, accent, isLast }: PersonCardProps
       {/* Enrich */}
       <button
         onClick={() => onEnrich(person)}
-        className="nb-btn flex-none bg-panel2 px-3 py-2 text-[11px] font-black text-ink uppercase tracking-wider whitespace-nowrap hover:bg-line hover:text-base"
-        style={{ ["--nb" as string]: accent }}
+        className="nb-btn flex-none px-3 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap"
       >
         Get contact →
       </button>

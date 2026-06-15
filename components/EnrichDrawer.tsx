@@ -69,8 +69,7 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
       >
         <button
           onClick={onClose}
-          className="nb-btn absolute top-4 right-4 bg-acc-green text-base p-1.5"
-          style={{ ["--nb" as string]: "var(--color-line)" }}
+          className="nb-btn absolute top-4 right-4 p-1.5"
           aria-label="Close"
         >
           <X size={16} strokeWidth={3} />
@@ -79,7 +78,7 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
         <div className="pb-16">
           {loading && (
             <div className="px-6 pt-14">
-              <p className="font-mono font-bold text-xs text-acc-yellow uppercase tracking-widest mb-6">
+              <p className="font-mono font-bold text-xs text-acc-red uppercase tracking-widest mb-6">
                 ▌ resolving contact…
               </p>
               <PipelineProgress steps={ENRICH_STEPS} accent="var(--color-acc-yellow)" />
@@ -99,11 +98,11 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
                 className="border-b-[3px] border-line px-6 pt-12 pb-5"
                 style={{ backgroundColor: "var(--color-acc-yellow)" }}
               >
-                <h2 className="font-display text-3xl leading-none tracking-tight text-base uppercase">
+                <h2 className="font-display text-3xl leading-none tracking-tight text-ink uppercase">
                   {person.name || "—"}
                 </h2>
                 {person.title && (
-                  <p className="font-bold text-base/80 text-sm mt-1">{person.title}</p>
+                  <p className="font-bold text-ink/70 text-sm mt-1">{person.title}</p>
                 )}
               </div>
 
@@ -116,7 +115,7 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
                         <a
                           key={email}
                           href={`mailto:${email}`}
-                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-green hover:bg-acc-green hover:text-base break-all"
+                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base break-all"
                         >
                           {email}
                         </a>
@@ -125,7 +124,7 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
                         <a
                           key={phone}
                           href={`tel:${phone}`}
-                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue hover:bg-acc-blue hover:text-base"
+                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base"
                         >
                           {phone}
                         </a>

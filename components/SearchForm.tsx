@@ -18,7 +18,7 @@ export function SearchForm({
   return (
     <form onSubmit={onSubmit}>
       <div className="nb-card p-5 sm:p-6" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
-        <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-yellow mb-4">
+        <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-red mb-4">
           ▌ paste a job posting
         </p>
 
@@ -42,8 +42,7 @@ export function SearchForm({
         <button
           type="submit"
           disabled={loading}
-          className="nb-btn bg-acc-yellow text-base font-black text-base uppercase tracking-wider px-8 py-3 w-full sm:w-auto"
-          style={{ ["--nb" as string]: "var(--color-line)" }}
+          className="nb-btn font-black text-sm uppercase tracking-wider px-8 py-3 w-full sm:w-auto"
         >
           {loading ? "Working…" : "Find people →"}
         </button>

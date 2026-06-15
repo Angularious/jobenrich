@@ -99,7 +99,7 @@ export default function Home() {
             <h1 className="font-display text-6xl sm:text-7xl text-ink leading-[0.85] tracking-tight uppercase">
               Job Intel
             </h1>
-            <p className="font-mono font-bold text-acc-yellow text-xs sm:text-sm mt-2 uppercase tracking-wide">
+            <p className="font-mono font-bold text-acc-red text-xs sm:text-sm mt-2 uppercase tracking-wide">
               ▌ surface the people behind any job
             </p>
           </div>
@@ -107,7 +107,7 @@ export default function Home() {
         </div>
 
         {/* Marquee stripe */}
-        <div className="bg-acc-green overflow-hidden border-t-[3px] border-line py-1.5">
+        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5">
           <div
             className="whitespace-nowrap font-mono font-bold text-base text-xs uppercase tracking-widest"
             style={{ animation: "nbMarquee 18s linear infinite" }}
@@ -121,7 +121,7 @@ export default function Home() {
 
       {/* ── Main ───────────────────────────────────────────── */}
       <main className="max-w-[860px] mx-auto px-4 sm:px-6 py-8 pb-24">
-        <p className="font-bold text-sm text-muted mb-5 border-l-[3px] border-acc-yellow pl-3">
+        <p className="font-bold text-sm text-muted mb-5 border-l-[3px] border-acc-red pl-3">
           Paste a LinkedIn job URL. We surface people at that company you should
           reach out to — plus the recruiters hiring for it.
         </p>
@@ -151,7 +151,7 @@ export default function Home() {
                 hiring for
               </span>
               <span className="font-black text-sm text-ink">{results.jobTitle || "Role"}</span>
-              <span className="font-bold text-acc-yellow text-sm">@ {results.company}</span>
+              <span className="font-bold text-acc-red text-sm">@ {results.company}</span>
             </div>
 
             <ResultsSection

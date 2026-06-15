@@ -50,8 +50,7 @@ export function AlumniFinder({ company, domain, onEnrich }: AlumniFinderProps) {
       {!open ? (
         <button
           onClick={() => setOpen(true)}
-          className="nb-btn bg-panel text-ink font-black text-sm uppercase tracking-wider px-5 py-3 w-full sm:w-auto"
-          style={{ ["--nb" as string]: "var(--color-acc-pink)" }}
+          className="nb-btn font-black text-sm uppercase tracking-wider px-5 py-3 w-full sm:w-auto"
         >
           + Find alumni from your school
         </button>
@@ -76,8 +75,7 @@ export function AlumniFinder({ company, domain, onEnrich }: AlumniFinderProps) {
             <button
               type="submit"
               disabled={loading}
-              className="nb-btn bg-acc-pink text-base font-black text-sm uppercase tracking-wider px-6 py-3 whitespace-nowrap"
-              style={{ ["--nb" as string]: "var(--color-line)" }}
+              className="nb-btn font-black text-sm uppercase tracking-wider px-6 py-3 whitespace-nowrap"
             >
               {loading ? "Working…" : "Search →"}
             </button>

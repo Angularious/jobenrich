@@ -27,17 +27,20 @@ export function ResultsSection({
   const accent = VARIANTS[variant];
 
   return (
-    <section className="nb-card mt-8" style={{ ["--nb" as string]: accent }}>
-      {/* Header bar — filled accent, black text */}
-      <div
-        className="flex items-baseline justify-between gap-3 px-4 py-3 border-b-[3px] border-line"
-        style={{ backgroundColor: accent }}
-      >
-        <h2 className="font-display text-2xl leading-none tracking-tight text-base uppercase">
-          {title}
-        </h2>
+    <section className="nb-card mt-8">
+      {/* Header bar — white, black title, small accent square */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b-[3px] border-line">
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            className="flex-none w-4 h-4 border-[3px] border-line"
+            style={{ backgroundColor: accent }}
+          />
+          <h2 className="font-display text-2xl leading-none tracking-tight text-ink uppercase truncate">
+            {title}
+          </h2>
+        </div>
         {hint && (
-          <span className="font-mono text-[11px] font-bold text-base/80 whitespace-nowrap">
+          <span className="font-mono text-[11px] font-bold text-dim uppercase whitespace-nowrap">
             {hint}
           </span>
         )}

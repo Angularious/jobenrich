@@ -17,26 +17,24 @@ export function OrthogonalBadge({ size = 120 }: OrthogonalBadgeProps) {
       style={{
         width: size,
         height: size,
-        backgroundColor: "var(--color-acc-green)",
-        boxShadow: "5px 5px 0 0 var(--color-line)",
-        animation: "nbWiggle 4s steps(8) infinite",
+        backgroundColor: "var(--color-acc-yellow)",
         padding: 12,
       }}
     >
       <span
-        className="font-mono font-bold uppercase text-base"
+        className="font-mono font-bold uppercase text-ink"
         style={{ fontSize: size * 0.085, letterSpacing: "0.08em" }}
       >
         powered by
       </span>
       <span
-        className="font-display uppercase text-base leading-none"
+        className="font-display uppercase text-ink leading-none"
         style={{ fontSize: size * 0.17, letterSpacing: "0.01em" }}
       >
         Orthogonal
       </span>
       <span
-        className="font-mono font-bold uppercase text-base"
+        className="font-mono font-bold uppercase text-ink"
         style={{ fontSize: size * 0.085, letterSpacing: "0.04em" }}
       >
         try now →

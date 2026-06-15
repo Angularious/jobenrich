@@ -7,7 +7,7 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 ## Stack
 
 - Next.js 16.2.9 (App Router) · React 19 · TypeScript
-- Tailwind v4 — config lives in `app/globals.css` via `@theme`, **not** a `tailwind.config` file. Design system is **dark neo-brutalism**: hard 3px borders, hard offset shadows (`box-shadow: Npx Npx 0 0 <accent>`), zero border-radius, flat saturated accents, instant/stepped state changes (never eased). Reusable primitives `.nb-card` / `.nb-btn` / `.nb-input` / `.nb-flat` live in `globals.css`; per-element accent is passed via the inline `--nb` CSS custom property.
+- Tailwind v4 — config lives in `app/globals.css` via `@theme`, **not** a `tailwind.config` file. Design system is **light raw brutalism** (per the `nextlevelbuilder/ui-ux-pro-max-skill` "Brutalism" spec): white paper, black ink + 3px black borders, blue underlined links, pure primary accents (red is primary; blue/yellow/green/pink alongside), **no shadows**, zero border-radius, system-ui + monospace fonts (bold 700+), instant state changes (`transition: none`). Buttons are plain bordered blocks that **invert on hover** (white/black → black/white) — colors live in the `.nb-btn` primitive, so they override utility bg/text classes on the element. Reusable primitives `.nb-card` / `.nb-btn` / `.nb-input` / `.nb-flat` live in `globals.css`; a fill accent (where needed) is passed via the inline `--nb` CSS custom property. Errors/alerts use hot pink to stay distinct from the red primary. **Gotcha:** `text-base` resolves to the `--color-base` **color** (white), not a font-size — use `text-ink` for black text and an explicit size class (e.g. `text-sm`).
 - `lucide-react` for icons. No test framework.
 
 ## Environment variables
