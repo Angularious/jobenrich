@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { apiPost, errorMessage } from "@/lib/security/client";
 import { ResultsSection } from "./ResultsSection";
 import { PipelineProgress } from "./PipelineProgress";
 import type { PersonData } from "./PersonCard";
@@ -22,23 +23,23 @@ export function AlumniFinder({ company, domain, onEnrich, enrichedUrls }: Alumni
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const honeypot = String(new FormData(e.currentTarget as HTMLFormElement).get("website") ?? "");
     setError(null);
     setAlumni(null);
     setAlumniError(false);
     setLoading(true);
     try {
-      const res = await fetch("/api/alumni", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company, domain, school }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Couldn't search alumni.");
+      const r = await apiPost<{ alumni?: PersonData[]; alumniError?: boolean; error?: string }>(
+        "/api/alumni",
+        { company, domain, school },
+        { honeypot, timed: true }
+      );
+      if (!r.ok) {
+        setError(errorMessage(r, "Couldn't search alumni."));
         return;
       }
-      setAlumni(data.alumni ?? []);
-      setAlumniError(Boolean(data.alumniError));
+      setAlumni(r.data.alumni ?? []);
+      setAlumniError(Boolean(r.data.alumniError));
     } catch {
       setError("Request failed. Check your connection.");
     } finally {
@@ -62,6 +63,15 @@ export function AlumniFinder({ company, domain, onEnrich, enrichedUrls }: Alumni
           </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
+            {/* Honeypot — hidden from users, only bots fill it. */}
+            <input
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              style={{ display: "none" }}
+            />
             <div className="nb-input flex-1" style={{ ["--nb" as string]: "var(--color-acc-pink)" }}>
               <input
                 type="text"

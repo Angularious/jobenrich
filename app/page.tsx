@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiPost, primeSecurity, errorMessage } from "@/lib/security/client";
 import { SearchForm } from "@/components/SearchForm";
 import { ResultsSection } from "@/components/ResultsSection";
 import { AlumniFinder } from "@/components/AlumniFinder";
@@ -40,23 +41,28 @@ export default function Home() {
 
   const enrichedUrls = new Set(Object.keys(enrichCache));
 
+  // Prime the request token + page-load stamp as early as possible.
+  useEffect(() => {
+    primeSecurity();
+  }, []);
+
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
+    const honeypot = String(new FormData(e.currentTarget as HTMLFormElement).get("website") ?? "");
     setError(null);
     setResults(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobUrl }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
+      const r = await apiPost<SearchResults & { error?: string }>(
+        "/api/search",
+        { jobUrl },
+        { honeypot, timed: true }
+      );
+      if (!r.ok) {
+        setError(errorMessage(r, "Something went wrong."));
         return;
       }
-      setResults(data);
+      setResults(r.data);
     } catch {
       setError("Request failed. Check your connection.");
     } finally {
@@ -79,17 +85,14 @@ export default function Home() {
     setEnrichData(null);
     setEnrichLoading(true);
     try {
-      const res = await fetch("/api/enrich", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linkedinUrl: person.linkedinUrl }),
+      const r = await apiPost<EnrichData & { error?: string }>("/api/enrich", {
+        linkedinUrl: person.linkedinUrl,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setEnrichError(data.error ?? "Enrichment failed. Try again.");
+      if (!r.ok) {
+        setEnrichError(errorMessage(r, "Enrichment failed. Try again."));
         return;
       }
-      const result = data as EnrichData;
+      const result = r.data as EnrichData;
       setEnrichData(result);
       setEnrichCache((prev) => ({ ...prev, [person.linkedinUrl]: result }));
     } catch {

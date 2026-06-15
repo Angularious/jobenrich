@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { callOrthogonal } from "@/lib/orthogonal";
 import { isValidLinkedInProfileUrl } from "@/lib/validation";
+import { guardRequest, type GuardBody } from "@/lib/security/guard";
+
+const MAX_URL_LEN = 500;
 
 export interface EnrichLink {
   label: string;
@@ -122,17 +125,27 @@ async function contactOutContacts(
 }
 
 export async function POST(request: Request) {
-  let body: { linkedinUrl?: string };
+  let body: GuardBody & { linkedinUrl?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
+  const guard = guardRequest(request, body, "enrich");
+  if (!guard.ok) return guard.response;
+
   const linkedinUrl = body.linkedinUrl ?? "";
-  if (!isValidLinkedInProfileUrl(linkedinUrl)) {
+  if (
+    typeof linkedinUrl !== "string" ||
+    linkedinUrl.length > MAX_URL_LEN ||
+    !isValidLinkedInProfileUrl(linkedinUrl)
+  ) {
     return NextResponse.json({ error: "Invalid LinkedIn profile URL." }, { status: 400 });
   }
+
+  // Input is valid and a call will be made — count it against the daily cap.
+  guard.recordSpend();
 
   try {
     // Cheap first: Tomba. Only escalate to ContactOut if it has no email.

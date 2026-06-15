@@ -18,6 +18,15 @@ export function SearchForm({
   return (
     <form onSubmit={onSubmit}>
       <div className="nb-card p-5 sm:p-6" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
+        {/* Honeypot — hidden from users, only bots fill it. */}
+        <input
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          style={{ display: "none" }}
+        />
         <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-red mb-4">
           ▌ paste a job posting
         </p>

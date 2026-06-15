@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { callOrthogonal } from "@/lib/orthogonal";
 import { canonicalizeLinkedInJobUrl } from "@/lib/validation";
+import { guardRequest, type GuardBody } from "@/lib/security/guard";
 import {
   findSimilarPeople,
   findRecruiters,
   simplifyJobTitle,
   extractDomain,
 } from "@/lib/people";
+
+const MAX_URL_LEN = 2000;
+
+// The job-extract + two parallel waterfalls can chain several upstream calls;
+// give it headroom beyond the Hobby 10s default.
+export const maxDuration = 30;
 
 function extractJobFields(data: Record<string, unknown>): {
   jobTitle: string;
@@ -23,20 +30,30 @@ function extractJobFields(data: Record<string, unknown>): {
 }
 
 export async function POST(request: Request) {
-  let body: { jobUrl?: string };
+  let body: GuardBody & { jobUrl?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const canonicalUrl = canonicalizeLinkedInJobUrl(body.jobUrl ?? "");
+  const guard = guardRequest(request, body, "search");
+  if (!guard.ok) return guard.response;
+
+  const rawUrl = body.jobUrl ?? "";
+  if (typeof rawUrl !== "string" || rawUrl.length > MAX_URL_LEN) {
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  }
+  const canonicalUrl = canonicalizeLinkedInJobUrl(rawUrl);
   if (!canonicalUrl) {
     return NextResponse.json(
       { error: "Couldn't read that job posting. Paste a LinkedIn Jobs URL." },
       { status: 400 }
     );
   }
+
+  // Input is valid and a call will be made — count it against the daily cap.
+  guard.recordSpend();
 
   // Step 1: Extract the job (title + company).
   let jobData: Record<string, unknown>;

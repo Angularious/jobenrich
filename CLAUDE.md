@@ -12,16 +12,21 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 
 ## Environment variables
 
-- `ORTHOGONAL_API_KEY` — auth for all external data calls (required).
-- `APP_PASSWORD` — the single shared password for the gate (required).
+- `ORTHOGONAL_API_KEY` — auth for all external data calls (required, **server-side only**, never `NEXT_PUBLIC_`).
+- `DAILY_SPEND_CAP_USD` — hard daily ceiling across all visitors (default 40 in code). Editable in Vercel without a code change.
+- `REQUEST_TOKEN_SECRET` — HMAC secret for signing request/timing tokens (random 32+ chars).
+- `NEXT_PUBLIC_APP_URL` — public deployment origin, used for same-origin checks on API routes.
 
-> **⚠ Status (as of 2026-06-13): `.env.local` still holds placeholders** — `ORTHOGONAL_API_KEY=orth_live_xxxxx` and `APP_PASSWORD=change_me_before_deploying`. The app therefore **cannot reach Orthogonal or pass the login gate yet**; hitting the API routes via `npm run dev` will fail until a real key + password are dropped in. The waterfall pipeline was validated out-of-band through the Orthogonal MCP tools (job extract, ContactOut search, Tomba enrich all confirmed against a live Tenable posting). Two branches remain unverified end-to-end: the **Coresignal fallback** (only fires when ContactOut returns zero) and the **ContactOut `/v1/people/linkedin` $0.33 enrich fallback** (only fires when Tomba misses).
+> **⚠ Status: `.env.local` still holds a placeholder `ORTHOGONAL_API_KEY` (`orth_live_xxxxx`)** and `REQUEST_TOKEN_SECRET` must be set before deploy. The app **cannot reach Orthogonal** until a real key is dropped in. The waterfall pipeline was validated out-of-band through the Orthogonal MCP tools (job extract, ContactOut search, Tomba enrich confirmed against a live posting). Two branches remain unverified end-to-end: the **Coresignal fallback** (fires only when ContactOut returns zero) and the **ContactOut `/v1/people/linkedin` enrich fallback** (fires only when Tomba misses). See `.env.example`.
 
 ## Architecture / data flow
 
-**Auth is a lightweight password gate, not real user accounts:**
-- `proxy.ts` — middleware guarding `/`, `/api/search`, `/api/enrich`. Redirects to `/login` when the `ji_session` cookie is absent. Note: presence-only check — the token value isn't validated server-side.
-- `app/api/auth/route.ts` — compares input to `APP_PASSWORD` with `timingSafeEqual`, then sets a random httpOnly `ji_session` cookie (30-day).
+**This is a public demo — no login.** Access is controlled by Level 1 abuse protections (audit-driven), all in `lib/security/`:
+- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Returns `recordSpend()` to call after the upstream work.
+- `rateLimit.ts` / `spendCap.ts` — in-memory (module-level Map / counter). **Level 1 caveat:** counters don't persist across serverless instances or redeploys — fine for a low-traffic demo; move to Upstash Redis at 50+ daily users.
+- `tokens.ts` + `app/api/init/route.ts` — issue/verify the signed request token (CSRF) and page-load stamp (timing); the client fetches them on mount.
+- `client.ts` — client helper: builds the composite fingerprint (IP + localStorage session token + UA/screen/tz/lang/platform), primes the token, and `apiPost()`s with all signals. `errorMessage()` renders 429/503 messages.
+- Limits: **10 / step / day** per visitor, 24h reset; cap **$40/day**.
 
 **Everything runs on a waterfall model** (ported from a sister demo): within each finder, a step only fires if the previous step returned **zero** people. Cheap/broad sources are tried first, and a fallback only costs money when it's actually needed. All finders live in `lib/people.ts` and return a normalized `Person` ({ name, title, linkedinUrl, profilePictureUrl, source }).
 
