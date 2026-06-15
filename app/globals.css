@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Dark neo-brutalism palette ─────────────────────── */
-  --color-base: #0C0C0D;     /* page background */
+  /* ── Dark Brutalism palette ─────────────────────────────
+     Brutalist spec (raw, high-contrast, pure primary colors),
+     adapted to dark mode. Neon green replaces red as the hot
+     primary accent; hot pink carries error/alert states.    */
+  --color-base: #0C0C0D;     /* page background (near-black) */
   --color-panel: #161617;    /* cards / surfaces */
   --color-panel2: #1F1F21;   /* nested surfaces, inputs */
   --color-line: #F4F4F2;     /* hard borders + shadows (near-white) */
@@ -10,12 +13,11 @@
   --color-muted: #9B9B98;    /* secondary text */
   --color-dim: #6A6A68;      /* tertiary text */
 
-  /* Flat, saturated accents — no gradients */
-  --color-acc-yellow: #FFE600;
-  --color-acc-red: #FF4D4D;
-  --color-acc-blue: #5B8CFF;
-  --color-acc-green: #00E676;
-  --color-acc-pink: #FF4DCB;
+  /* Pure, flat brutalist accents — no gradients */
+  --color-acc-green: #00FF00; /* neon green — primary hot accent (was red) */
+  --color-acc-yellow: #FFFF00;
+  --color-acc-blue: #5B8CFF;  /* pure #0000FF is illegible on black — dark-adapted */
+  --color-acc-pink: #FF00FF;  /* hot pink — error / alert */
 
   --font-display: var(--font-anton), Impact, "Arial Black", sans-serif;
   --font-sans: var(--font-inter), system-ui, sans-serif;

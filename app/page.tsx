@@ -107,7 +107,7 @@ export default function Home() {
         </div>
 
         {/* Marquee stripe */}
-        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5">
+        <div className="bg-acc-green overflow-hidden border-t-[3px] border-line py-1.5">
           <div
             className="whitespace-nowrap font-mono font-bold text-base text-xs uppercase tracking-widest"
             style={{ animation: "nbMarquee 18s linear infinite" }}
@@ -179,25 +179,6 @@ export default function Home() {
           </>
         )}
       </main>
-
-      {/* ── Footer ─────────────────────────────────────────── */}
-      <footer className="border-t-[3px] border-line bg-acc-red">
-        <div className="max-w-[860px] mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-base text-center sm:text-left">
-            <p className="font-display text-2xl uppercase leading-none">Powered by Orthogonal</p>
-            <p className="font-mono font-bold text-xs mt-1">The API marketplace for AI apps</p>
-          </div>
-          <a
-            href="https://orthogonal.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nb-btn bg-base text-ink font-black text-sm uppercase tracking-widest px-7 py-3"
-            style={{ ["--nb" as string]: "var(--color-line)" }}
-          >
-            Try Orthogonal →
-          </a>
-        </div>
-      </footer>
 
       <EnrichDrawer
         person={enrichTarget}

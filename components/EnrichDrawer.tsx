@@ -69,7 +69,7 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
       >
         <button
           onClick={onClose}
-          className="nb-btn absolute top-4 right-4 bg-acc-red text-base p-1.5"
+          className="nb-btn absolute top-4 right-4 bg-acc-green text-base p-1.5"
           style={{ ["--nb" as string]: "var(--color-line)" }}
           aria-label="Close"
         >
@@ -87,7 +87,7 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
           )}
 
           {error && (
-            <div className="mx-6 mt-14 nb-flat bg-acc-red text-base font-bold text-sm px-4 py-3">
+            <div className="mx-6 mt-14 nb-flat bg-acc-pink text-base font-bold text-sm px-4 py-3">
               ⚠ {error}
             </div>
           )}

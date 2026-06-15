@@ -17,7 +17,7 @@ export function OrthogonalBadge({ size = 120 }: OrthogonalBadgeProps) {
       style={{
         width: size,
         height: size,
-        backgroundColor: "var(--color-acc-red)",
+        backgroundColor: "var(--color-acc-green)",
         boxShadow: "5px 5px 0 0 var(--color-line)",
         animation: "nbWiggle 4s steps(8) infinite",
         padding: 12,

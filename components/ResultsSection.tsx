@@ -5,7 +5,6 @@ const VARIANTS = {
   blue: "var(--color-acc-blue)",
   green: "var(--color-acc-green)",
   pink: "var(--color-acc-pink)",
-  red: "var(--color-acc-red)",
 } as const;
 
 interface ResultsSectionProps {
@@ -46,7 +45,7 @@ export function ResultsSection({
 
       <div>
         {hasError ? (
-          <div className="px-4 py-6 text-center text-acc-red text-sm font-bold font-mono">
+          <div className="px-4 py-6 text-center text-acc-pink text-sm font-bold font-mono">
             ⚠ Lookup failed — try again
           </div>
         ) : people.length === 0 ? (

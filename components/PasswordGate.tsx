@@ -62,7 +62,7 @@ export function PasswordGate() {
               </div>
 
               {error && (
-                <div className="nb-flat bg-acc-red text-base font-bold text-xs px-3 py-2">
+                <div className="nb-flat bg-acc-pink text-base font-bold text-xs px-3 py-2">
                   ⚠ {error}
                 </div>
               )}
