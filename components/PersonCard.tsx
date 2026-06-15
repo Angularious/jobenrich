@@ -5,11 +5,13 @@ export interface PersonData {
   title: string;
   linkedinUrl: string;
   profilePictureUrl: string | null;
+  source?: "contactout" | "coresignal";
 }
 
 interface PersonCardProps {
   person: PersonData;
   onEnrich: (person: PersonData) => void;
+  accent: string; // CSS color for the offset shadow / hover
   isLast?: boolean;
 }
 
@@ -22,17 +24,20 @@ function vanitySlug(url: string): string {
   }
 }
 
-export function PersonCard({ person, onEnrich, isLast }: PersonCardProps) {
+export function PersonCard({ person, onEnrich, accent, isLast }: PersonCardProps) {
   const slug = vanitySlug(person.linkedinUrl);
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 hover:bg-market-yellow/20 ${
-        !isLast ? "border-b-2 border-market-black/20" : ""
+      className={`flex items-center gap-3 px-4 py-3 ${
+        !isLast ? "border-b-[3px] border-line/20" : ""
       }`}
     >
       {/* Avatar */}
-      <div className="flex-none w-10 h-10 border-2 border-market-black bg-market-yellow overflow-hidden flex items-center justify-center">
+      <div
+        className="flex-none w-11 h-11 border-[3px] border-line bg-panel2 overflow-hidden flex items-center justify-center"
+        style={{ ["--nb" as string]: accent }}
+      >
         {person.profilePictureUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -40,12 +45,11 @@ export function PersonCard({ person, onEnrich, isLast }: PersonCardProps) {
             alt={person.name}
             className="w-full h-full object-cover"
             onError={(e) => {
-              const el = e.currentTarget;
-              el.style.display = "none";
+              e.currentTarget.style.display = "none";
             }}
           />
         ) : (
-          <span className="text-market-black font-black text-sm">
+          <span className="text-ink font-black text-base">
             {person.name ? person.name[0].toUpperCase() : "?"}
           </span>
         )}
@@ -60,19 +64,20 @@ export function PersonCard({ person, onEnrich, isLast }: PersonCardProps) {
             href={person.linkedinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-dim text-xs hover:text-market-red font-medium"
+            className="text-dim text-[11px] font-mono hover:text-ink"
           >
-            {slug}
+            /in/{slug}
           </a>
         )}
       </div>
 
-      {/* Enrich button */}
+      {/* Enrich */}
       <button
         onClick={() => onEnrich(person)}
-        className="flex-none bg-market-yellow border-2 border-market-black px-3 py-1 text-xs font-black text-market-black uppercase whitespace-nowrap hover:bg-market-red hover:text-white hover:border-market-red"
+        className="nb-btn flex-none bg-panel2 px-3 py-2 text-[11px] font-black text-ink uppercase tracking-wider whitespace-nowrap hover:bg-line hover:text-base"
+        style={{ ["--nb" as string]: accent }}
       >
-        ENRICH →
+        Get contact →
       </button>
     </div>
   );

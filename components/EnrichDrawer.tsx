@@ -6,33 +6,14 @@ import { PersonData } from "./PersonCard";
 import { PipelineProgress } from "./PipelineProgress";
 
 const ENRICH_STEPS = [
-  { label: "Fetching profile data", delay: 0 },
-  { label: "Loading contact information", delay: 1100 },
-  { label: "Retrieving work history", delay: 2200 },
+  { label: "Checking Tomba", delay: 0 },
+  { label: "Falling back to ContactOut", delay: 1400 },
 ];
 
-interface ContactInfo {
-  emails?: unknown;
-  work_emails?: unknown;
-  personal_emails?: unknown;
-  phones?: unknown;
-}
-
-interface Experience {
-  company?: string;
-  title?: string;
-  start_date?: string;
-  end_date?: string;
-}
-
 export interface EnrichData {
-  full_name?: string;
-  title?: string;
-  company?: string;
-  contact_info?: ContactInfo;
-  experience?: unknown;
-  education?: unknown;
-  skills?: unknown;
+  emails: string[];
+  phones: string[];
+  source: "tomba" | "contactout" | "none";
 }
 
 interface EnrichDrawerProps {
@@ -43,60 +24,15 @@ interface EnrichDrawerProps {
   onClose: () => void;
 }
 
-function SectionBand({ children }: { children: React.ReactNode }) {
+function Band({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-market-red text-white font-black text-xs uppercase tracking-widest px-4 py-2 mt-8">
+    <div className="font-mono text-[11px] font-bold uppercase tracking-widest text-dim mt-8 mb-3">
       {children}
     </div>
   );
 }
 
-// Safely coerce an unknown value to an array of strings.
-function toStrings(val: unknown): string[] {
-  if (!val) return [];
-  if (typeof val === "string") return val ? [val] : [];
-  if (!Array.isArray(val)) return [];
-  return val.flatMap((item) => {
-    if (!item) return [];
-    if (typeof item === "string") return [item];
-    if (typeof item === "object") {
-      const o = item as Record<string, unknown>;
-      const s = o.value ?? o.number ?? o.phone ?? o.email ?? o.text ?? "";
-      return typeof s === "string" && s ? [s] : [];
-    }
-    return [];
-  });
-}
-
-// Safely coerce an unknown value to an array of Experience objects.
-function toExperiences(val: unknown): Experience[] {
-  if (!val || !Array.isArray(val)) return [];
-  return val.filter((v) => v && typeof v === "object") as Experience[];
-}
-
-// Format an education entry that may be a string or an object.
-function formatEdu(edu: unknown): string {
-  if (typeof edu === "string") return edu;
-  if (edu && typeof edu === "object") {
-    const o = edu as Record<string, unknown>;
-    return [
-      o.school_name ?? o.school ?? o.institution ?? o.name,
-      o.degree,
-      o.major ?? o.field_of_study,
-    ]
-      .filter((x): x is string => typeof x === "string" && Boolean(x))
-      .join(" · ");
-  }
-  return String(edu ?? "");
-}
-
-export function EnrichDrawer({
-  person,
-  data,
-  loading,
-  error,
-  onClose,
-}: EnrichDrawerProps) {
+export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDrawerProps) {
   const isOpen = person !== null;
 
   useEffect(() => {
@@ -106,63 +42,52 @@ export function EnrichDrawer({
     };
   }, [isOpen]);
 
-  const allEmails = [
-    ...toStrings(data?.contact_info?.work_emails),
-    ...toStrings(data?.contact_info?.personal_emails),
-    ...toStrings(data?.contact_info?.emails),
-  ].filter((v, i, a) => a.indexOf(v) === i);
-
-  const phones = toStrings(data?.contact_info?.phones);
-  const experience = toExperiences(data?.experience);
-  const education: string[] = Array.isArray(data?.education)
-    ? (data.education as unknown[]).map(formatEdu).filter(Boolean)
-    : [];
-  const skills = toStrings(data?.skills);
+  const emails = data?.emails ?? [];
+  const phones = data?.phones ?? [];
+  const nothing = !loading && !error && data && emails.length === 0 && phones.length === 0;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-40 ${
-          isOpen ? "pointer-events-auto" : "pointer-events-none"
-        }`}
+        className={`fixed inset-0 z-40 ${isOpen ? "pointer-events-auto" : "pointer-events-none"}`}
         style={{
-          backgroundColor: "rgba(26,26,26,0.6)",
+          backgroundColor: "rgba(0,0,0,0.7)",
           opacity: isOpen ? 1 : 0,
-          transition: "opacity 200ms ease",
+          transition: "opacity 120ms steps(3)",
         }}
         onClick={onClose}
       />
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-market-bg border-l-4 border-market-black z-50 overflow-y-auto"
+        className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-base border-l-[3px] border-line z-50 overflow-y-auto"
         style={{
           transform: isOpen ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 200ms ease",
+          transition: "transform 140ms steps(4)",
         }}
       >
-        {/* Close */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 bg-market-black text-white p-1 hover:bg-market-red"
+          className="nb-btn absolute top-4 right-4 bg-acc-red text-base p-1.5"
+          style={{ ["--nb" as string]: "var(--color-line)" }}
           aria-label="Close"
         >
-          <X size={16} strokeWidth={2} />
+          <X size={16} strokeWidth={3} />
         </button>
 
         <div className="pb-16">
           {loading && (
-            <div className="px-6 pt-12">
-              <p className="font-black text-sm text-market-red uppercase tracking-widest mb-6">
-                ■ LOADING... ■
+            <div className="px-6 pt-14">
+              <p className="font-mono font-bold text-xs text-acc-yellow uppercase tracking-widest mb-6">
+                ▌ resolving contact…
               </p>
-              <PipelineProgress steps={ENRICH_STEPS} />
+              <PipelineProgress steps={ENRICH_STEPS} accent="var(--color-acc-yellow)" />
             </div>
           )}
 
           {error && (
-            <div className="bg-market-dark-red text-white font-bold text-sm px-6 py-4 mx-6 mt-12">
+            <div className="mx-6 mt-14 nb-flat bg-acc-red text-base font-bold text-sm px-4 py-3">
               ⚠ {error}
             </div>
           )}
@@ -170,110 +95,65 @@ export function EnrichDrawer({
           {!loading && !error && person && (
             <>
               {/* Header */}
-              <div className="bg-market-yellow border-b-4 border-market-black px-6 pt-10 pb-5">
-                <h2 className="font-black text-2xl text-market-black">
-                  {data?.full_name ?? person.name}
+              <div
+                className="border-b-[3px] border-line px-6 pt-12 pb-5"
+                style={{ backgroundColor: "var(--color-acc-yellow)" }}
+              >
+                <h2 className="font-display text-3xl leading-none tracking-tight text-base uppercase">
+                  {person.name || "—"}
                 </h2>
-                {(data?.title ?? person.title) && (
-                  <p className="font-bold text-market-dark-red text-sm mt-1">
-                    {data?.title ?? person.title}
-                  </p>
-                )}
-                {data?.company && (
-                  <p className="font-bold text-market-black text-xs mt-0.5">
-                    {data.company}
-                  </p>
+                {person.title && (
+                  <p className="font-bold text-base/80 text-sm mt-1">{person.title}</p>
                 )}
               </div>
 
               <div className="px-6">
-                {/* CONTACT */}
-                {(allEmails.length > 0 || phones.length > 0) && (
+                {(emails.length > 0 || phones.length > 0) && (
                   <>
-                    <SectionBand>■ Contact / 联系方式</SectionBand>
-                    <div className="mt-3 space-y-1">
-                      {allEmails.map((email) => (
-                        <p key={email} className="text-sm font-bold">
-                          <a
-                            href={`mailto:${email}`}
-                            className="text-market-red hover:underline"
-                          >
-                            {email}
-                          </a>
-                        </p>
+                    <Band>■ Contact</Band>
+                    <div className="space-y-2">
+                      {emails.map((email) => (
+                        <a
+                          key={email}
+                          href={`mailto:${email}`}
+                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-green hover:bg-acc-green hover:text-base break-all"
+                        >
+                          {email}
+                        </a>
                       ))}
                       {phones.map((phone) => (
-                        <p key={phone} className="text-sm font-bold text-ink">
+                        <a
+                          key={phone}
+                          href={`tel:${phone}`}
+                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue hover:bg-acc-blue hover:text-base"
+                        >
                           {phone}
-                        </p>
+                        </a>
                       ))}
                     </div>
+                    {data?.source && (
+                      <p className="mt-3 font-mono text-[11px] text-dim uppercase">
+                        via {data.source}
+                      </p>
+                    )}
                   </>
                 )}
 
-                {/* EXPERIENCE */}
-                {experience.length > 0 && (
-                  <>
-                    <SectionBand>■ Experience / 工作经历</SectionBand>
-                    <div className="mt-3 space-y-4">
-                      {experience.map((exp, i) => (
-                        <div key={i} className="border-l-4 border-market-yellow pl-3">
-                          <p className="text-sm font-black text-ink">{exp.title}</p>
-                          <p className="text-xs font-bold text-muted">
-                            {exp.company}
-                            {exp.start_date &&
-                              ` · ${exp.start_date}–${exp.end_date ?? "present"}`}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {/* EDUCATION */}
-                {education.length > 0 && (
-                  <>
-                    <SectionBand>■ Education / 教育背景</SectionBand>
-                    <div className="mt-3 space-y-2">
-                      {education.map((edu, i) => (
-                        <p
-                          key={i}
-                          className="text-sm font-bold text-ink border-l-4 border-market-red pl-3"
-                        >
-                          {edu}
-                        </p>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {/* SKILLS */}
-                {skills.length > 0 && (
-                  <>
-                    <SectionBand>■ Skills / 技能</SectionBand>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {skills.map((skill, i) => (
-                        <span
-                          key={i}
-                          className="text-xs font-bold text-market-black bg-market-yellow border-2 border-market-black px-2 py-0.5"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {/* Nothing found at all */}
-                {allEmails.length === 0 &&
-                  phones.length === 0 &&
-                  experience.length === 0 &&
-                  education.length === 0 &&
-                  skills.length === 0 && (
-                    <p className="mt-8 text-sm font-bold text-muted text-center">
-                      ── No additional data found for this profile ──
+                {nothing && (
+                  <div className="mt-12 nb-flat bg-panel px-4 py-6 text-center">
+                    <p className="text-sm font-bold text-muted font-mono">
+                      No contact info found.
                     </p>
-                  )}
+                    <a
+                      href={person.linkedinUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block mt-3 text-acc-blue font-bold text-sm hover:underline"
+                    >
+                      Open LinkedIn profile →
+                    </a>
+                  </div>
+                )}
               </div>
             </>
           )}

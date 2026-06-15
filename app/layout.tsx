@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Anton, Noto_Sans_JP, Inter } from "next/font/google";
+import { Anton, Space_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
 const anton = Anton({
@@ -9,23 +9,23 @@ const anton = Anton({
   display: "swap",
 });
 
-const noto = Noto_Sans_JP({
-  variable: "--font-noto",
+const spaceMono = Space_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
-  weight: ["400", "700", "900"],
+  weight: ["400", "700"],
   display: "swap",
 });
 
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  weight: ["400", "600", "700", "900"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Job Intel ★ 求职情报",
-  description: "Surface the people behind any LinkedIn job posting.",
+  title: "JOB INTEL — who to talk to",
+  description: "Paste a job posting. Get the people behind it.",
 };
 
 export default function RootLayout({
@@ -34,8 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${anton.variable} ${noto.variable} ${inter.variable}`}>
-      <body className="min-h-screen bg-market-bg font-sans antialiased">
+    <html lang="en" className={`${anton.variable} ${spaceMono.variable} ${inter.variable}`}>
+      <body className="min-h-screen bg-base text-ink font-sans antialiased">
         {children}
       </body>
     </html>

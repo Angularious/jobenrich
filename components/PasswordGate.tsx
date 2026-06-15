@@ -30,47 +30,39 @@ export function PasswordGate() {
   }
 
   return (
-    <div className="min-h-screen bg-market-bg flex flex-col">
+    <div className="min-h-screen bg-base flex flex-col">
       {/* Header */}
-      <div className="bg-market-yellow border-b-4 border-market-black px-6 py-6">
-        <h1
-          className="text-5xl text-market-black leading-none"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          JOB INTEL
+      <div className="border-b-[3px] border-line px-6 py-6">
+        <h1 className="font-display text-5xl text-ink leading-none uppercase tracking-tight">
+          Job Intel
         </h1>
-        <p className="font-black text-market-red text-sm mt-1">
-          ★ 求职情报 · PROFESSIONAL NETWORK FINDER ★
-        </p>
-      </div>
-      <div className="bg-market-red py-2">
-        <p className="text-center text-white font-black text-xs uppercase tracking-widest">
-          ★ RESTRICTED ACCESS · ENTER PASSWORD TO CONTINUE ★
+        <p className="font-mono font-bold text-acc-yellow text-sm mt-2 uppercase tracking-wide">
+          ▌ restricted — enter password
         </p>
       </div>
 
       {/* Form */}
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
-          <div className="border-4 border-market-black bg-market-yellow p-6">
-            <p className="font-black text-xs uppercase tracking-widest text-market-red mb-4">
-              ■ ACCESS / 登录 ■
+          <div className="nb-card p-6" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
+            <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-yellow mb-4">
+              ▌ access
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="border-2 border-market-black bg-white focus-within:bg-market-yellow/30">
+              <div className="nb-input" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
                   required
-                  className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal"
+                  className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
                 />
               </div>
 
               {error && (
-                <div className="bg-market-dark-red text-white font-bold text-xs px-3 py-2">
+                <div className="nb-flat bg-acc-red text-base font-bold text-xs px-3 py-2">
                   ⚠ {error}
                 </div>
               )}
@@ -78,14 +70,10 @@ export function PasswordGate() {
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-market-red text-white font-black text-base uppercase tracking-widest px-10 py-4 border-2 border-market-black hover:bg-market-dark-red disabled:opacity-60 w-full"
-                style={
-                  !loading
-                    ? { animation: "marketJump 2.2s ease-in-out infinite" }
-                    : undefined
-                }
+                className="nb-btn bg-acc-yellow text-base font-black text-base uppercase tracking-wider px-10 py-3 w-full"
+                style={{ ["--nb" as string]: "var(--color-line)" }}
               >
-                {loading ? "★ ENTERING... ★" : "★ ENTER ★"}
+                {loading ? "Entering…" : "Enter →"}
               </button>
             </form>
           </div>

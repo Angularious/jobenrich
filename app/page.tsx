@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { SearchForm } from "@/components/SearchForm";
 import { ResultsSection } from "@/components/ResultsSection";
+import { AlumniFinder } from "@/components/AlumniFinder";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
 import { PipelineProgress } from "@/components/PipelineProgress";
 import { OrthogonalBadge } from "@/components/OrthogonalBadge";
@@ -11,17 +12,21 @@ import type { PersonData } from "@/components/PersonCard";
 interface SearchResults {
   jobTitle: string;
   company: string;
-  similarRoles: PersonData[];
-  similarRolesError: boolean;
-  schoolMatches: PersonData[];
-  schoolMatchesError: boolean;
+  domain: string | null;
+  people: PersonData[];
+  peopleError: boolean;
   recruiters: PersonData[];
   recruitersError: boolean;
 }
 
+const SEARCH_STEPS = [
+  { label: "Reading the job posting", delay: 0 },
+  { label: "Finding people at the company", delay: 3500 },
+  { label: "Tracking down recruiters", delay: 3500 },
+];
+
 export default function Home() {
   const [jobUrl, setJobUrl] = useState("");
-  const [school, setSchool] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResults | null>(null);
@@ -30,17 +35,6 @@ export default function Home() {
   const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
-
-  const searchSteps = useMemo(
-    () => [
-      { label: "Extracting job details from LinkedIn", delay: 0 },
-      { label: "Finding people in similar roles", delay: 4000 },
-      { label: `Matching ${school.trim() || "school"} alumni`, delay: 4000 },
-      { label: "Searching for recruiters", delay: 4000 },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading]
-  );
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -51,7 +45,7 @@ export default function Home() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobUrl, school }),
+        body: JSON.stringify({ jobUrl }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -99,128 +93,112 @@ export default function Home() {
   return (
     <>
       {/* ── Header ─────────────────────────────────────────── */}
-      <header className="border-b-4 border-market-black">
-        <div className="bg-market-yellow px-6 py-5 flex items-center justify-between gap-4">
+      <header className="border-b-[3px] border-line">
+        <div className="max-w-[860px] mx-auto px-5 sm:px-6 py-6 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1
-              className="text-5xl sm:text-6xl text-market-black leading-none tracking-tight"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              JOB INTEL
+            <h1 className="font-display text-6xl sm:text-7xl text-ink leading-[0.85] tracking-tight uppercase">
+              Job Intel
             </h1>
-            <p className="font-black text-market-red text-xs sm:text-sm mt-1 uppercase tracking-wide">
-              ★ 求职情报 · Surface People Behind Any Job ★
+            <p className="font-mono font-bold text-acc-yellow text-xs sm:text-sm mt-2 uppercase tracking-wide">
+              ▌ surface the people behind any job
             </p>
           </div>
-          <OrthogonalBadge size={128} />
+          <OrthogonalBadge size={116} />
         </div>
 
-        {/* Red stripe */}
-        <div className="bg-market-red py-2">
-          <p className="text-center text-white font-black text-xs uppercase tracking-widest">
-            ★ PROFESSIONAL NETWORK INTELLIGENCE TOOL · 职业人脉分析平台 ★
-          </p>
+        {/* Marquee stripe */}
+        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5">
+          <div
+            className="whitespace-nowrap font-mono font-bold text-base text-xs uppercase tracking-widest"
+            style={{ animation: "nbMarquee 18s linear infinite" }}
+          >
+            {Array(6)
+              .fill("★ paste a job ★ meet the team ★ get the intro ")
+              .join("")}
+          </div>
         </div>
       </header>
 
       {/* ── Main ───────────────────────────────────────────── */}
-      <main className="max-w-[880px] mx-auto px-4 sm:px-6 py-8 pb-24">
-
-        {/* Instructional line */}
-        <p className="font-bold text-sm text-market-black mb-5 border-l-4 border-market-yellow pl-3">
-          Paste any LinkedIn job URL · Enter a school name · Get instant people intelligence
+      <main className="max-w-[860px] mx-auto px-4 sm:px-6 py-8 pb-24">
+        <p className="font-bold text-sm text-muted mb-5 border-l-[3px] border-acc-yellow pl-3">
+          Paste a LinkedIn job URL. We surface people at that company you should
+          reach out to — plus the recruiters hiring for it.
         </p>
 
         <SearchForm
           jobUrl={jobUrl}
-          school={school}
           loading={loading}
           error={error}
           onJobUrlChange={setJobUrl}
-          onSchoolChange={setSchool}
           onSubmit={handleSearch}
         />
 
-        {/* Pipeline progress */}
         {loading && (
-          <div className="mt-6 border-4 border-market-black bg-white p-6">
-            <p className="font-black text-xs text-market-red uppercase tracking-widest mb-4">
-              ■ PROCESSING... ■
+          <div className="nb-card mt-6 p-6" style={{ ["--nb" as string]: "var(--color-acc-blue)" }}>
+            <p className="font-mono font-bold text-xs text-acc-blue uppercase tracking-widest mb-4">
+              ▌ working…
             </p>
-            <PipelineProgress steps={searchSteps} />
+            <PipelineProgress steps={SEARCH_STEPS} accent="var(--color-acc-blue)" />
           </div>
         )}
 
-        {/* Results */}
         {results && (
           <>
-            {/* Job summary banner */}
-            <div className="mt-6 bg-market-black text-white px-4 py-3 flex flex-wrap gap-x-6 gap-y-1">
-              <span className="font-black text-sm">
-                ★ {results.jobTitle || "Role"}
+            {/* Job banner */}
+            <div className="nb-flat mt-6 bg-panel px-4 py-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="font-mono text-[11px] text-dim uppercase tracking-widest">
+                hiring for
               </span>
-              <span className="font-bold text-market-yellow text-sm">
-                @ {results.company || "Company"}
-              </span>
+              <span className="font-black text-sm text-ink">{results.jobTitle || "Role"}</span>
+              <span className="font-bold text-acc-yellow text-sm">@ {results.company}</span>
             </div>
 
             <ResultsSection
-              title="Similar Roles 相似职位"
-              people={results.similarRoles}
-              hasError={results.similarRolesError}
+              title="People to talk to"
+              hint="at the company"
+              people={results.people}
+              hasError={results.peopleError}
               onEnrich={handleEnrich}
-              variant="red"
+              variant="blue"
             />
             <ResultsSection
-              title={`From ${school.trim() || "School"} · 校友`}
-              people={results.schoolMatches}
-              hasError={results.schoolMatchesError}
-              onEnrich={handleEnrich}
-              variant="yellow"
-            />
-            <ResultsSection
-              title="Recruiters · 招聘者"
+              title="Recruiters"
+              hint="hiring now"
               people={results.recruiters}
               hasError={results.recruitersError}
               onEnrich={handleEnrich}
               variant="green"
             />
 
-            {/* Cost note */}
-            <div className="mt-6 border-2 border-market-black bg-market-yellow/40 px-4 py-3">
-              <p className="font-bold text-xs text-market-black">
-                ★ API Cost: Search ~$0.24 · Enrichment $0.55 per person
-              </p>
-            </div>
+            <AlumniFinder
+              company={results.company}
+              domain={results.domain}
+              onEnrich={handleEnrich}
+            />
           </>
         )}
       </main>
 
-      {/* ── Footer banner ──────────────────────────────────── */}
-      <footer className="border-t-4 border-market-black bg-market-red">
-        <div className="max-w-[880px] mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-white text-center sm:text-left">
-            <p className="font-black text-base uppercase tracking-wide">
-              ★ POWERED BY ORTHOGONAL ★
-            </p>
-            <p className="font-bold text-xs text-market-yellow mt-0.5">
-              The API marketplace for AI applications
-            </p>
+      {/* ── Footer ─────────────────────────────────────────── */}
+      <footer className="border-t-[3px] border-line bg-acc-red">
+        <div className="max-w-[860px] mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-base text-center sm:text-left">
+            <p className="font-display text-2xl uppercase leading-none">Powered by Orthogonal</p>
+            <p className="font-mono font-bold text-xs mt-1">The API marketplace for AI apps</p>
           </div>
-
           <a
             href="https://orthogonal.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="bg-market-yellow text-market-black font-black text-sm uppercase tracking-widest px-8 py-4 border-2 border-market-black hover:bg-white inline-block"
-            style={{ animation: "marketPulse 1.8s ease-in-out infinite" }}
+            className="nb-btn bg-base text-ink font-black text-sm uppercase tracking-widest px-7 py-3"
+            style={{ ["--nb" as string]: "var(--color-line)" }}
           >
-            TRY ORTHOGONAL NOW →
+            Try Orthogonal →
           </a>
         </div>
       </footer>
 
-      {/* ── Enrich drawer ──────────────────────────────────── */}
       <EnrichDrawer
         person={enrichTarget}
         data={enrichData}

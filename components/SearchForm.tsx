@@ -2,76 +2,39 @@
 
 interface SearchFormProps {
   jobUrl: string;
-  school: string;
   loading: boolean;
   error: string | null;
   onJobUrlChange: (v: string) => void;
-  onSchoolChange: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
-}
-
-function MarketInput({
-  value,
-  onChange,
-  placeholder,
-  required,
-  maxLength,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  required?: boolean;
-  maxLength?: number;
-}) {
-  return (
-    <div className="border-2 border-market-black bg-white focus-within:bg-market-yellow/30">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required={required}
-        maxLength={maxLength}
-        className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal"
-      />
-    </div>
-  );
 }
 
 export function SearchForm({
   jobUrl,
-  school,
   loading,
   error,
   onJobUrlChange,
-  onSchoolChange,
   onSubmit,
 }: SearchFormProps) {
   return (
     <form onSubmit={onSubmit}>
-      <div className="border-4 border-market-black bg-market-yellow p-6">
-        <p className="font-black text-xs uppercase tracking-widest text-market-red mb-4">
-          ■ SEARCH / 搜索 ■
+      <div className="nb-card p-5 sm:p-6" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
+        <p className="font-mono font-bold text-[11px] uppercase tracking-widest text-acc-yellow mb-4">
+          ▌ paste a job posting
         </p>
 
-        <div className="space-y-3 mb-5">
-          <MarketInput
+        <div className="nb-input mb-4" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>
+          <input
+            type="text"
             value={jobUrl}
-            onChange={onJobUrlChange}
-            placeholder="LinkedIn job URL (any format)"
+            onChange={(e) => onJobUrlChange(e.target.value)}
+            placeholder="https://linkedin.com/jobs/view/…"
             required
-          />
-          <MarketInput
-            value={school}
-            onChange={onSchoolChange}
-            placeholder="Your school"
-            required
-            maxLength={100}
+            className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
           />
         </div>
 
         {error && (
-          <div className="bg-market-dark-red text-white font-bold text-xs px-3 py-2 mb-4">
+          <div className="nb-flat bg-acc-red text-base font-bold text-xs px-3 py-2 mb-4">
             ⚠ {error}
           </div>
         )}
@@ -79,14 +42,10 @@ export function SearchForm({
         <button
           type="submit"
           disabled={loading}
-          className="bg-market-red text-white font-black text-base uppercase tracking-widest px-10 py-4 border-2 border-market-black hover:bg-market-dark-red disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
-          style={
-            !loading
-              ? { animation: "marketJump 2.2s ease-in-out infinite" }
-              : undefined
-          }
+          className="nb-btn bg-acc-yellow text-base font-black text-base uppercase tracking-wider px-8 py-3 w-full sm:w-auto"
+          style={{ ["--nb" as string]: "var(--color-line)" }}
         >
-          {loading ? "★ SEARCHING... ★" : "★ FIND! 搜索 ★"}
+          {loading ? "Working…" : "Find people →"}
         </button>
       </div>
     </form>

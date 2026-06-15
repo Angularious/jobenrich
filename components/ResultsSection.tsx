@@ -1,55 +1,57 @@
 import { PersonData, PersonCard } from "./PersonCard";
 
-const VARIANT_STYLES = {
-  red: {
-    header: "bg-market-red text-white",
-    border: "border-market-red",
-  },
-  yellow: {
-    header: "bg-market-yellow text-market-black",
-    border: "border-market-yellow",
-  },
-  green: {
-    header: "bg-market-green text-white",
-    border: "border-market-green",
-  },
+const VARIANTS = {
+  yellow: "var(--color-acc-yellow)",
+  blue: "var(--color-acc-blue)",
+  green: "var(--color-acc-green)",
+  pink: "var(--color-acc-pink)",
+  red: "var(--color-acc-red)",
 } as const;
 
 interface ResultsSectionProps {
   title: string;
-  subtitle?: string;
+  hint?: string;
   people: PersonData[];
   hasError: boolean;
   onEnrich: (person: PersonData) => void;
-  variant?: keyof typeof VARIANT_STYLES;
+  variant?: keyof typeof VARIANTS;
 }
 
 export function ResultsSection({
   title,
-  subtitle,
+  hint,
   people,
   hasError,
   onEnrich,
-  variant = "red",
+  variant = "yellow",
 }: ResultsSectionProps) {
-  const styles = VARIANT_STYLES[variant];
+  const accent = VARIANTS[variant];
 
   return (
-    <section className="mt-8 border-2 border-market-black">
-      {/* Section header */}
-      <div className={`${styles.header} px-4 py-3 flex items-center justify-between`}>
-        <h2 className="font-black text-base uppercase tracking-wide">{title}</h2>
-        {subtitle && (
-          <span className="text-xs font-bold opacity-80">{subtitle}</span>
+    <section className="nb-card mt-8" style={{ ["--nb" as string]: accent }}>
+      {/* Header bar — filled accent, black text */}
+      <div
+        className="flex items-baseline justify-between gap-3 px-4 py-3 border-b-[3px] border-line"
+        style={{ backgroundColor: accent }}
+      >
+        <h2 className="font-display text-2xl leading-none tracking-tight text-base uppercase">
+          {title}
+        </h2>
+        {hint && (
+          <span className="font-mono text-[11px] font-bold text-base/80 whitespace-nowrap">
+            {hint}
+          </span>
         )}
-        <span className="font-black text-sm">{people.length} found</span>
       </div>
 
-      {/* Content */}
-      <div className="bg-white">
-        {hasError || people.length === 0 ? (
-          <div className="px-4 py-6 text-center text-dim text-sm font-bold border-t-2 border-market-black">
-            ── No results ──
+      <div>
+        {hasError ? (
+          <div className="px-4 py-6 text-center text-acc-red text-sm font-bold font-mono">
+            ⚠ Lookup failed — try again
+          </div>
+        ) : people.length === 0 ? (
+          <div className="px-4 py-6 text-center text-dim text-sm font-bold font-mono">
+            — nobody surfaced —
           </div>
         ) : (
           people.map((person, i) => (
@@ -57,6 +59,7 @@ export function ResultsSection({
               key={person.linkedinUrl}
               person={person}
               onEnrich={onEnrich}
+              accent={accent}
               isLast={i === people.length - 1}
             />
           ))

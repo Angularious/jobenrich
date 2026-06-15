@@ -1,56 +1,97 @@
 @import "tailwindcss";
 
 @theme {
-  /* Market palette */
-  --color-market-red: #E8001D;
-  --color-market-dark-red: #B50015;
-  --color-market-yellow: #FFD700;
-  --color-market-orange: #FF6600;
-  --color-market-green: #2B8A28;
-  --color-market-black: #1A1A1A;
-  --color-market-bg: #FFFEF0;
+  /* ── Dark neo-brutalism palette ─────────────────────── */
+  --color-base: #0C0C0D;     /* page background */
+  --color-panel: #161617;    /* cards / surfaces */
+  --color-panel2: #1F1F21;   /* nested surfaces, inputs */
+  --color-line: #F4F4F2;     /* hard borders + shadows (near-white) */
+  --color-ink: #F4F4F2;      /* primary text */
+  --color-muted: #9B9B98;    /* secondary text */
+  --color-dim: #6A6A68;      /* tertiary text */
 
-  /* Compat tokens (used in EnrichDrawer, PersonCard, etc.) */
-  --color-paper: #FFFEF0;
-  --color-surface: #FFFFFF;
-  --color-hairline: #333333;
-  --color-ink: #1A1A1A;
-  --color-muted: #444444;
-  --color-dim: #777777;
-  --color-crimson: #E8001D;
+  /* Flat, saturated accents — no gradients */
+  --color-acc-yellow: #FFE600;
+  --color-acc-red: #FF4D4D;
+  --color-acc-blue: #5B8CFF;
+  --color-acc-green: #00E676;
+  --color-acc-pink: #FF4DCB;
 
   --font-display: var(--font-anton), Impact, "Arial Black", sans-serif;
-  --font-sans: var(--font-noto), var(--font-inter), "Noto Sans JP", system-ui, sans-serif;
-  --font-serif: var(--font-noto), serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-mono), "Courier New", monospace;
+}
+
+html {
+  background-color: #0C0C0D;
 }
 
 body {
-  background-color: #FFFEF0;
-  color: #1A1A1A;
-  font-family: var(--font-noto), var(--font-inter), system-ui, sans-serif;
+  background-color: #0C0C0D;
+  color: #F4F4F2;
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
-/* ── Animations ───────────────────────────────────────── */
+/* ── Neo-brutalism primitives ───────────────────────────
+   Hard borders, hard offset shadows, zero radius, instant
+   state changes (stepped, never eased). Per-element accent
+   is set via the --nb inline custom property.            */
 
-@keyframes marketWiggle {
-  0%, 100% { transform: scale(1) rotate(-2deg); }
-  25%       { transform: scale(1.12) rotate(2.5deg); }
-  50%       { transform: scale(1.08) rotate(-1.5deg); }
-  75%       { transform: scale(1.14) rotate(3deg); }
+.nb-card {
+  background-color: var(--color-panel);
+  border: 3px solid var(--color-line);
+  box-shadow: 6px 6px 0 0 var(--nb, var(--color-line));
+  border-radius: 0;
 }
 
-@keyframes marketJump {
-  0%, 100% { transform: scale(1) translateY(0); }
-  40%       { transform: scale(1.07) translateY(-6px); }
-  65%       { transform: scale(1.03) translateY(-2px); }
+.nb-flat {
+  border: 3px solid var(--color-line);
+  border-radius: 0;
 }
 
-@keyframes marketPulse {
-  0%, 100% { transform: scale(1); }
-  50%       { transform: scale(1.09); }
+.nb-btn {
+  border: 3px solid var(--color-line);
+  box-shadow: 4px 4px 0 0 var(--nb, var(--color-line));
+  border-radius: 0;
+  transition: transform 70ms steps(2), box-shadow 70ms steps(2);
+}
+.nb-btn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 0 var(--nb, var(--color-line));
+}
+.nb-btn:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 0 var(--nb, var(--color-line));
+}
+.nb-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-@keyframes pulseDot {
+.nb-input {
+  background-color: var(--color-panel2);
+  border: 3px solid var(--color-line);
+  border-radius: 0;
+  color: var(--color-ink);
+  transition: box-shadow 70ms steps(2);
+}
+.nb-input:focus-within {
+  box-shadow: 4px 4px 0 0 var(--nb, var(--color-acc-yellow));
+}
+
+/* ── Animations (looping flair only — no eased transitions) ── */
+
+@keyframes nbBlink {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.2; }
+  50%      { opacity: 0.15; }
+}
+
+@keyframes nbMarquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes nbWiggle {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
 }

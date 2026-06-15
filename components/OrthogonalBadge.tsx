@@ -1,71 +1,46 @@
 "use client";
 
-const STARBURST_12 =
-  "polygon(50% 0%, 59.06% 16.18%, 75% 6.70%, 74.75% 25.25%, 93.30% 25%, 83.82% 40.94%, 100% 50%, 83.82% 59.06%, 93.30% 75%, 74.75% 74.75%, 75% 93.30%, 59.06% 83.82%, 50% 100%, 40.94% 83.82%, 25% 93.30%, 25.25% 74.75%, 6.70% 75%, 16.18% 59.06%, 0% 50%, 16.18% 40.94%, 6.70% 25%, 25.25% 25.25%, 25% 6.70%, 40.94% 16.18%)";
-
 interface OrthogonalBadgeProps {
   size?: number;
 }
 
-export function OrthogonalBadge({ size = 148 }: OrthogonalBadgeProps) {
+// Neo-brutalist sticker: hard border, hard offset shadow, zero radius,
+// a slow looping wiggle so it reads as a slapped-on label.
+export function OrthogonalBadge({ size = 120 }: OrthogonalBadgeProps) {
   return (
     <a
       href="https://orthogonal.com"
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Powered by Orthogonal — Try Now!"
-      style={{ display: "inline-block", textDecoration: "none", flexShrink: 0 }}
+      aria-label="Powered by Orthogonal"
+      className="nb-flat inline-flex flex-col items-center justify-center text-center shrink-0"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: "var(--color-acc-red)",
+        boxShadow: "5px 5px 0 0 var(--color-line)",
+        animation: "nbWiggle 4s steps(8) infinite",
+        padding: 12,
+      }}
     >
-      <div
-        style={{
-          width: size,
-          height: size,
-          clipPath: STARBURST_12,
-          backgroundColor: "#E8001D",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          textAlign: "center",
-          animation: "marketWiggle 3s ease-in-out infinite",
-          cursor: "pointer",
-        }}
+      <span
+        className="font-mono font-bold uppercase text-base"
+        style={{ fontSize: size * 0.085, letterSpacing: "0.08em" }}
       >
-        <div style={{ padding: "28px", lineHeight: 1.2 }}>
-          <p
-            style={{
-              fontSize: size * 0.08,
-              fontWeight: 900,
-              color: "#FFD700",
-              margin: 0,
-              letterSpacing: "0.05em",
-            }}
-          >
-            POWERED BY
-          </p>
-          <p
-            style={{
-              fontSize: size * 0.1,
-              fontWeight: 900,
-              color: "#FFFFFF",
-              margin: 0,
-              letterSpacing: "0.02em",
-            }}
-          >
-            ORTHOGONAL
-          </p>
-          <p
-            style={{
-              fontSize: size * 0.075,
-              fontWeight: 900,
-              color: "#FFD700",
-              margin: "4px 0 0",
-              letterSpacing: "0.04em",
-            }}
-          >
-            TRY NOW! →
-          </p>
-        </div>
-      </div>
+        powered by
+      </span>
+      <span
+        className="font-display uppercase text-base leading-none"
+        style={{ fontSize: size * 0.17, letterSpacing: "0.01em" }}
+      >
+        Orthogonal
+      </span>
+      <span
+        className="font-mono font-bold uppercase text-base"
+        style={{ fontSize: size * 0.085, letterSpacing: "0.04em" }}
+      >
+        try now →
+      </span>
     </a>
   );
 }
