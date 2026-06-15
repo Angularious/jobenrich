@@ -6,14 +6,23 @@ import { PersonData } from "./PersonCard";
 import { PipelineProgress } from "./PipelineProgress";
 
 const ENRICH_STEPS = [
-  { label: "Checking Tomba", delay: 0 },
-  { label: "Falling back to ContactOut", delay: 1400 },
+  { label: "Searching for their email", delay: 0 },
+  { label: "Pulling their full profile", delay: 1400 },
 ];
+
+export interface EnrichLink {
+  label: string;
+  url: string;
+}
 
 export interface EnrichData {
   emails: string[];
   phones: string[];
   source: "tomba" | "contactout" | "none";
+  company: string | null;
+  position: string | null;
+  location: string | null;
+  links: EnrichLink[];
 }
 
 interface EnrichDrawerProps {
@@ -44,7 +53,10 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
 
   const emails = data?.emails ?? [];
   const phones = data?.phones ?? [];
-  const nothing = !loading && !error && data && emails.length === 0 && phones.length === 0;
+  const links = data?.links ?? [];
+  const hasContact = emails.length > 0 || phones.length > 0;
+  const hasProfile = Boolean(data?.company || data?.location || links.length > 0);
+  const nothing = !loading && !error && data && !hasContact && !hasProfile;
 
   return (
     <>
@@ -101,13 +113,20 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
                 <h2 className="font-display text-3xl leading-none tracking-tight text-ink uppercase">
                   {person.name || "—"}
                 </h2>
-                {person.title && (
-                  <p className="font-bold text-ink/70 text-sm mt-1">{person.title}</p>
+                {(person.title || data?.position) && (
+                  <p className="font-bold text-ink/70 text-sm mt-1">
+                    {person.title || data?.position}
+                  </p>
+                )}
+                {(data?.company || data?.location) && (
+                  <p className="font-mono font-bold text-ink/70 text-[11px] uppercase tracking-wide mt-1">
+                    {[data?.company, data?.location].filter(Boolean).join("  ·  ")}
+                  </p>
                 )}
               </div>
 
               <div className="px-6">
-                {(emails.length > 0 || phones.length > 0) && (
+                {hasContact && (
                   <>
                     <Band>■ Contact</Band>
                     <div className="space-y-2">
@@ -130,11 +149,28 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
                         </a>
                       ))}
                     </div>
-                    {data?.source && (
-                      <p className="mt-3 font-mono text-[11px] text-dim uppercase">
-                        via {data.source}
-                      </p>
-                    )}
+                  </>
+                )}
+
+                {links.length > 0 && (
+                  <>
+                    <Band>■ Around the web</Band>
+                    <div className="space-y-2">
+                      {links.map((link) => (
+                        <a
+                          key={link.url}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="nb-flat flex items-center justify-between gap-3 bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base break-all"
+                        >
+                          <span className="flex-none no-underline opacity-60 text-[11px] uppercase tracking-widest">
+                            {link.label}
+                          </span>
+                          <span className="truncate">{link.url.replace(/^https?:\/\//, "")}</span>
+                        </a>
+                      ))}
+                    </div>
                   </>
                 )}
 

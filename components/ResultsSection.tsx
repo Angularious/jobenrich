@@ -14,6 +14,7 @@ interface ResultsSectionProps {
   hasError: boolean;
   onEnrich: (person: PersonData) => void;
   variant?: keyof typeof VARIANTS;
+  enrichedUrls?: Set<string>;
 }
 
 export function ResultsSection({
@@ -23,6 +24,7 @@ export function ResultsSection({
   hasError,
   onEnrich,
   variant = "yellow",
+  enrichedUrls,
 }: ResultsSectionProps) {
   const accent = VARIANTS[variant];
 
@@ -63,6 +65,7 @@ export function ResultsSection({
               onEnrich={onEnrich}
               accent={accent}
               isLast={i === people.length - 1}
+              enriched={enrichedUrls?.has(person.linkedinUrl)}
             />
           ))
         )}

@@ -13,6 +13,7 @@ interface PersonCardProps {
   onEnrich: (person: PersonData) => void;
   accent: string; // CSS color for the section's accent square
   isLast?: boolean;
+  enriched?: boolean; // contact already pulled — reopen instead of re-fetch
 }
 
 function vanitySlug(url: string): string {
@@ -24,7 +25,7 @@ function vanitySlug(url: string): string {
   }
 }
 
-export function PersonCard({ person, onEnrich, accent, isLast }: PersonCardProps) {
+export function PersonCard({ person, onEnrich, accent, isLast, enriched }: PersonCardProps) {
   const slug = vanitySlug(person.linkedinUrl);
 
   return (
@@ -76,7 +77,7 @@ export function PersonCard({ person, onEnrich, accent, isLast }: PersonCardProps
         onClick={() => onEnrich(person)}
         className="nb-btn flex-none px-3 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap"
       >
-        Get contact →
+        {enriched ? "Open contact →" : "Get contact →"}
       </button>
     </div>
   );

@@ -31,10 +31,14 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResults | null>(null);
 
+  // Enriched contacts are cached per LinkedIn URL so reopening is instant + free.
+  const [enrichCache, setEnrichCache] = useState<Record<string, EnrichData>>({});
   const [enrichTarget, setEnrichTarget] = useState<PersonData | null>(null);
   const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+
+  const enrichedUrls = new Set(Object.keys(enrichCache));
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -62,8 +66,17 @@ export default function Home() {
 
   async function handleEnrich(person: PersonData) {
     setEnrichTarget(person);
-    setEnrichData(null);
     setEnrichError(null);
+
+    // Already pulled — just reopen the cached result, no re-fetch.
+    const cached = enrichCache[person.linkedinUrl];
+    if (cached) {
+      setEnrichData(cached);
+      setEnrichLoading(false);
+      return;
+    }
+
+    setEnrichData(null);
     setEnrichLoading(true);
     try {
       const res = await fetch("/api/enrich", {
@@ -76,7 +89,9 @@ export default function Home() {
         setEnrichError(data.error ?? "Enrichment failed. Try again.");
         return;
       }
-      setEnrichData(data as EnrichData);
+      const result = data as EnrichData;
+      setEnrichData(result);
+      setEnrichCache((prev) => ({ ...prev, [person.linkedinUrl]: result }));
     } catch {
       setEnrichError("Enrichment failed. Try again.");
     } finally {
@@ -84,6 +99,7 @@ export default function Home() {
     }
   }
 
+  // Close only hides the drawer — the cache (and search results) are kept.
   function closeDrawer() {
     setEnrichTarget(null);
     setEnrichData(null);
@@ -161,6 +177,7 @@ export default function Home() {
               hasError={results.peopleError}
               onEnrich={handleEnrich}
               variant="blue"
+              enrichedUrls={enrichedUrls}
             />
             <ResultsSection
               title="Recruiters"
@@ -169,12 +186,14 @@ export default function Home() {
               hasError={results.recruitersError}
               onEnrich={handleEnrich}
               variant="green"
+              enrichedUrls={enrichedUrls}
             />
 
             <AlumniFinder
               company={results.company}
               domain={results.domain}
               onEnrich={handleEnrich}
+              enrichedUrls={enrichedUrls}
             />
           </>
         )}

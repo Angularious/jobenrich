@@ -2,10 +2,20 @@ import { NextResponse } from "next/server";
 import { callOrthogonal } from "@/lib/orthogonal";
 import { isValidLinkedInProfileUrl } from "@/lib/validation";
 
+export interface EnrichLink {
+  label: string;
+  url: string;
+}
+
 export interface EnrichResult {
   emails: string[];
   phones: string[];
   source: "tomba" | "contactout" | "none";
+  // Extra profile context surfaced alongside the contact details.
+  company: string | null;
+  position: string | null;
+  location: string | null;
+  links: EnrichLink[];
 }
 
 // Pull every string that looks like an email/phone out of an unknown payload.
@@ -38,22 +48,54 @@ function dedupe(list: string[]): string[] {
     .filter((v, i, a) => a.indexOf(v) === i);
 }
 
-/* Step 1 — Tomba /v1/linkedin ($0.01). Shape: { data: { email, phone_number } } */
-async function tombaEmail(profile: string): Promise<string | null> {
-  const raw = await callOrthogonal<{ data?: { email?: string | null } }>({
+function cleanStr(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+// Providers return URLs both with and without a scheme — normalize to a link.
+function asUrl(v: unknown): string | null {
+  const s = cleanStr(v);
+  if (!s) return null;
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
+
+interface TombaData {
+  email?: string | null;
+  company?: string | null;
+  position?: string | null;
+  country?: string | null;
+  twitter?: string | null;
+  website_url?: string | null;
+}
+
+/* Step 1 — Tomba /v1/linkedin ($0.01). Returns email + a bit of profile
+   context: { data: { email, company, position, country, twitter, website_url } } */
+async function tombaLookup(profile: string): Promise<TombaData | null> {
+  const raw = await callOrthogonal<{ data?: TombaData }>({
     api: "tomba",
     path: "/v1/linkedin",
     method: "GET",
     query: { url: profile },
   });
-  const email = raw?.data?.email;
-  return typeof email === "string" && email ? email : null;
+  return raw?.data ?? null;
 }
 
-/* Step 2 — ContactOut /v1/people/linkedin ($0.33, no phone). */
+// Social/web links a Tomba record can carry (Twitter, personal site).
+function tombaLinks(data: TombaData | null): EnrichLink[] {
+  if (!data) return [];
+  const links: EnrichLink[] = [];
+  const tw = asUrl(data.twitter);
+  if (tw) links.push({ label: "Twitter / X", url: tw });
+  const web = asUrl(data.website_url);
+  if (web) links.push({ label: "Website", url: web });
+  return links;
+}
+
+/* Step 2 — ContactOut /v1/people/linkedin ($0.33, no phone). Returns
+   categorized emails + github links, but no name/title/company. */
 async function contactOutContacts(
   profile: string
-): Promise<{ emails: string[]; phones: string[] }> {
+): Promise<{ emails: string[]; phones: string[]; links: EnrichLink[] }> {
   const raw = await callOrthogonal<Record<string, unknown>>({
     api: "contactout",
     path: "/v1/people/linkedin",
@@ -72,7 +114,11 @@ async function contactOutContacts(
     ...collectStrings(root.phone, "phone"),
     ...collectStrings(root.phones, "phone"),
   ]);
-  return { emails, phones };
+  const links = dedupe(collectStrings(root.github, "email")).map((url) => ({
+    label: "GitHub",
+    url,
+  }));
+  return { emails, phones, links };
 }
 
 export async function POST(request: Request) {
@@ -89,24 +135,37 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Cheap first: Tomba. Only escalate to ContactOut if it comes back empty.
-    let email: string | null = null;
+    // Cheap first: Tomba. Only escalate to ContactOut if it has no email.
+    let tomba: TombaData | null = null;
     try {
-      email = await tombaEmail(linkedinUrl);
+      tomba = await tombaLookup(linkedinUrl);
     } catch (err) {
       console.error("[enrich] Tomba failed:", err);
     }
 
-    if (email) {
-      const result: EnrichResult = { emails: [email], phones: [], source: "tomba" };
+    if (tomba?.email) {
+      const result: EnrichResult = {
+        emails: [tomba.email],
+        phones: [],
+        source: "tomba",
+        company: cleanStr(tomba.company),
+        position: cleanStr(tomba.position),
+        location: cleanStr(tomba.country),
+        links: tombaLinks(tomba),
+      };
       return NextResponse.json(result);
     }
 
-    const { emails, phones } = await contactOutContacts(linkedinUrl);
+    // Fallback to ContactOut for emails/phones; keep any profile context Tomba did return.
+    const co = await contactOutContacts(linkedinUrl);
     const result: EnrichResult = {
-      emails,
-      phones,
-      source: emails.length || phones.length ? "contactout" : "none",
+      emails: co.emails,
+      phones: co.phones,
+      source: co.emails.length || co.phones.length ? "contactout" : "none",
+      company: cleanStr(tomba?.company),
+      position: cleanStr(tomba?.position),
+      location: cleanStr(tomba?.country),
+      links: [...tombaLinks(tomba), ...co.links],
     };
     return NextResponse.json(result);
   } catch (err) {
