@@ -18,7 +18,7 @@ export interface EnrichLink {
 export interface EnrichData {
   emails: string[];
   phones: string[];
-  source: "tomba" | "contactout" | "none";
+  source: "apollo" | "bytemine" | "contactout" | "none";
   company: string | null;
   position: string | null;
   location: string | null;

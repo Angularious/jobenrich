@@ -17,7 +17,7 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 - `REQUEST_TOKEN_SECRET` — HMAC secret for signing request/timing tokens (random 32+ chars).
 - `NEXT_PUBLIC_APP_URL` — public deployment origin, used for same-origin checks on API routes.
 
-> **⚠ Status: `.env.local` still holds a placeholder `ORTHOGONAL_API_KEY` (`orth_live_xxxxx`)** and `REQUEST_TOKEN_SECRET` must be set before deploy. The app **cannot reach Orthogonal** until a real key is dropped in. The waterfall pipeline was validated out-of-band through the Orthogonal MCP tools (job extract, ContactOut search, Tomba enrich confirmed against a live posting). Two branches remain unverified end-to-end: the **Coresignal fallback** (fires only when ContactOut returns zero) and the **ContactOut `/v1/people/linkedin` enrich fallback** (fires only when Tomba misses). See `.env.example`.
+> **⚠ Status: `.env.local` still holds a placeholder `ORTHOGONAL_API_KEY` (`orth_live_xxxxx`)** and `REQUEST_TOKEN_SECRET` must be set before deploy. The app **cannot reach Orthogonal** until a real key is dropped in. The waterfall pipeline was validated out-of-band through the Orthogonal MCP tools (job extract, ContactOut search, and the Apollo/Bytemine/ContactOut enrich steps each confirmed to return live data). One branch remains unverified end-to-end: the **Coresignal fallback** (fires only when ContactOut returns zero). See `.env.example`.
 
 ## Architecture / data flow
 
@@ -39,15 +39,18 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 
 **Alumni flow** (`components/AlumniFinder.tsx` → `app/api/alumni/route.ts`) — opt-in secondary action; the school is **not** asked for up front. Takes company + domain (from the search response) + school: ContactOut (company + education) → ContactOut (domain + education, only if a domain was found).
 
-**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — cheap contact waterfall: **Tomba `/v1/linkedin` ($0.01)** for an email first → only if empty, **ContactOut `/v1/people/linkedin` ($0.33)** for emails + phones. Returns `{ emails, phones, source, company, position, location, links }` — Tomba also yields company/position/country/twitter/website; ContactOut yields categorized emails + github. Provider response shapes are inconsistent, so the route coerces defensively (`collectStrings`, `cleanStr`, `asUrl`) — preserve that. The UI never names the providers (no "Tomba/ContactOut" in progress or results). Results are cached client-side per LinkedIn URL in `page.tsx` (`enrichCache`): the first "Get contact" fetches; afterward the button reads "Open contact" and reopening the drawer is instant and free.
+**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — cheap→rich→last-resort contact waterfall, each step firing only if no email yet: **Apollo `/api/v1/people/match` ($0.01)** for a verified email + profile, straight from the LinkedIn URL → **Bytemine `/contacts/enrich` ($0.03)** for work+personal email **and** mobile+work phone → **ContactOut `/v1/people/linkedin` ($0.33, `include_phone:false`)** as the last resort. Returns `{ emails, phones, source, company, position, location, links }`, where `source: "apollo" | "bytemine" | "contactout" | "none"`. Each step is independently `try/catch`'d — a provider error degrades to the next instead of failing the request — and profile context, phones, and links **accumulate** across steps, so an email found late still carries context an earlier step surfaced. **Phones come from Bytemine (mobile+work) and ContactOut, not Apollo** — Apollo's phone reveal is intentionally not requested so it stays a flat $0.01; ContactOut's phone tier ($0.55) is likewise unused (`include_phone` stays false). Apollo's raw payload is ~190 KB, so the route extracts only the fields it needs via `apolloLookup` and **never logs the whole body**; `isRealEmail()` drops Apollo's `email_not_unlocked@domain.com` placeholder. Provider response shapes are inconsistent, so the route coerces defensively (`collectStrings`, `cleanStr`, `asUrl`, `joinLocation`) — preserve that. The UI never names the providers (no "Apollo/Bytemine/ContactOut" in progress or results). Results are cached client-side per LinkedIn URL in `page.tsx` (`enrichCache`): the first "Get contact" fetches; afterward the button reads "Open contact" and reopening the drawer is instant and free.
 
 **Coresignal caveat:** `experience_company_name` matches anyone who *ever* worked there, so `fromCoresignal()` filters results to rows whose *current* `company_name` matches the target (falling back to the raw list only if none match). Coresignal returns `profile_url` (a real LinkedIn URL), so its results are still enrichable.
 
-## Costs (best case = first step hits, the common path)
+## Costs (best case = first step hits, the common path; all unit prices verified live against the Orthogonal marketplace)
 
-- **Search:** job extraction + People ($0.05) + Recruiters ($0.05). Fallbacks add ~$0.021 each only when a prior step returned nothing.
+- **Search:** job extraction ($0.09, always) + People (ContactOut $0.05) + Recruiters (ContactOut $0.05), the two waterfalls in parallel. Fallbacks add $0.05 (ContactOut company-only) or $0.021 (Coresignal preview) each, only when a prior step returned nothing. **Best case $0.19**, worst case ~$0.30 (People $0.121 + Recruiters $0.092 + extract $0.09).
 - **Alumni:** $0.05 (→ $0.10 worst case with the domain fallback).
-- **Enrich:** $0.01 (Tomba hit) → $0.34 worst case (Tomba miss + ContactOut).
+- **Enrich:** $0.01 (Apollo hit) → $0.04 (Apollo miss + Bytemine) → $0.37 worst case (both miss + ContactOut $0.33). Cached client-side, so paid once per profile.
+- **Full session:** ~$0.25 typical (search + alumni + one enrich, all first-step hits) → ~$0.77 if every fallback fires. The $40/day cap covers ~50–160 sessions/day.
+
+> Dynamic-priced endpoints: ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` and `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33`. The app pins both to the cheap side ($0.05 / $0.33).
 
 ## Key files
 
