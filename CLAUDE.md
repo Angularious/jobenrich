@@ -81,5 +81,6 @@ Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan*
 ## Conventions
 
 - Validate input and return `NextResponse.json({ error }, { status })` on bad requests; use 502 for upstream Orthogonal failures.
+- **Error text surfacing:** routes put user-facing text in `error`; the security guard puts it in `message`. The client's `errorMessage()` (`lib/security/client.ts`) reads **both** — keep it that way, or route errors silently fall back to the generic UI message. A URL that resolves to no company (e.g. application portals like ADP/iCIMS/Taleo that block scraping) returns 422 with `UNREADABLE_MSG`, which tells the user to try a LinkedIn/Greenhouse/Workday/careers link instead.
 - API routes log with a `[search]` / `[alumni]` / `[enrich]` / `[people]` prefix.
 - New external data sources go through `callOrthogonal`, not raw `fetch`, and new people-finders go through `lib/people.ts`'s `waterfall()` so the fire-only-on-empty cost discipline is preserved.
