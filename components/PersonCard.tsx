@@ -75,7 +75,9 @@ export function PersonCard({ person, onEnrich, accent, isLast, enriched }: Perso
       {/* Enrich */}
       <button
         onClick={() => onEnrich(person)}
-        className="nb-btn flex-none px-3 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap"
+        className={`nb-btn flex-none px-3 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap ${
+          enriched ? "nb-btn-primary" : ""
+        }`}
       >
         {enriched ? "Open contact →" : "Get contact →"}
       </button>

@@ -1,13 +1,19 @@
+// linkedin.com or any subdomain of it (www., m., ca., de., …) — LinkedIn
+// serves job URLs on locale/mobile subdomains too.
+function isLinkedInHostname(host: string): boolean {
+  const h = host.replace(/^www\./, "");
+  return h === "linkedin.com" || h.endsWith(".linkedin.com");
+}
+
 /**
  * Accepts any LinkedIn jobs URL the browser might show or the share button
- * produces, and returns the canonical /jobs/view/{id} URL.
- * Returns null if no job ID can be extracted.
+ * produces (including locale/mobile subdomains), and returns the canonical
+ * /jobs/view/{id} URL. Returns null if no job ID can be extracted.
  */
 export function canonicalizeLinkedInJobUrl(raw: string): string | null {
   try {
     const u = new URL(raw.trim());
-    const host = u.hostname.replace(/^www\./, "");
-    if (host !== "linkedin.com") return null;
+    if (!isLinkedInHostname(u.hostname)) return null;
 
     // Browser URL: /jobs/collections/...?currentJobId=4398396153
     const currentJobId = u.searchParams.get("currentJobId");
@@ -27,10 +33,11 @@ export function canonicalizeLinkedInJobUrl(raw: string): string | null {
   }
 }
 
-/** True if the URL is on linkedin.com (so the LinkedIn extractor should run). */
+/** True if the URL is on linkedin.com or a subdomain (so the LinkedIn extractor
+ *  should run rather than scraping the auth-walled page). */
 export function isLinkedInHost(raw: string): boolean {
   try {
-    return new URL(raw.trim()).hostname.replace(/^www\./, "") === "linkedin.com";
+    return isLinkedInHostname(new URL(raw.trim()).hostname);
   } catch {
     return false;
   }

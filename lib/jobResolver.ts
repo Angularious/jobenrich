@@ -228,6 +228,9 @@ export function resolveJob(rawUrl: string): Promise<ResolvedJob> {
   if (isLinkedInHost(rawUrl)) {
     const canonical = canonicalizeLinkedInJobUrl(rawUrl);
     if (canonical) return resolveLinkedIn(canonical);
+    // A LinkedIn URL that isn't a job posting (profile, /company, feed) — the
+    // generic scraper would just hit the auth wall, so don't spend on it.
+    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, source: "linkedin" });
   }
   return resolveGeneric(rawUrl);
 }

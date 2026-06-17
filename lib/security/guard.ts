@@ -38,7 +38,7 @@ export interface GuardBody {
 }
 
 type GuardResult =
-  | { ok: true; recordSpend: () => void }
+  | { ok: true; recordSpend: () => Promise<void> }
   | { ok: false; response: NextResponse };
 
 const BOT_UA =
@@ -110,11 +110,11 @@ const forbidden = (message: string) =>
  * before any Orthogonal call. On success, call the returned recordSpend()
  * AFTER a successful upstream call so the daily cap reflects real usage.
  */
-export function guardRequest(
+export async function guardRequest(
   request: Request,
   body: GuardBody,
   step: StepName
-): GuardResult {
+): Promise<GuardResult> {
   const cfg = STEPS[step];
 
   // 1. Same-origin + content type + obvious-bot header checks.
@@ -150,7 +150,7 @@ export function guardRequest(
   }
 
   // 5. Global daily spend cap (503 for everyone when hit). Don't reveal the cap.
-  if (!withinCap(cfg.cost)) {
+  if (!(await withinCap(cfg.cost))) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -166,7 +166,7 @@ export function guardRequest(
 
   // 6. Per-visitor, per-step daily rate limit.
   const key = `${step}:${compositeKey(request, body.fp)}`;
-  const rl = checkRateLimit(key, PER_STEP_DAILY_LIMIT, WINDOW_MS);
+  const rl = await checkRateLimit(key, PER_STEP_DAILY_LIMIT, WINDOW_MS);
   if (!rl.allowed) {
     return {
       ok: false,

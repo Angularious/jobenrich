@@ -228,7 +228,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const guard = guardRequest(request, body, "enrich");
+  const guard = await guardRequest(request, body, "enrich");
   if (!guard.ok) return guard.response;
 
   const linkedinUrl = body.linkedinUrl ?? "";
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
   }
 
   // Input is valid and a call will be made — count it against the daily cap.
-  guard.recordSpend();
+  await guard.recordSpend();
 
   // Cheap → rich → last-resort. Each step fires only if no email yet, and a
   // step that throws degrades to the next instead of failing the request.

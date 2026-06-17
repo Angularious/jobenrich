@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const guard = guardRequest(request, body, "alumni");
+  const guard = await guardRequest(request, body, "alumni");
   if (!guard.ok) return guard.response;
 
   const company = (body.company ?? "").trim();
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   }
 
   // Input is valid and a call will be made — count it against the daily cap.
-  guard.recordSpend();
+  await guard.recordSpend();
 
   try {
     const alumni = await findAlumni({ company, domain, school });

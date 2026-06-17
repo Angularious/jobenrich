@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const guard = guardRequest(request, body, "search");
+  const guard = await guardRequest(request, body, "search");
   if (!guard.ok) return guard.response;
 
   const rawUrl = typeof body.jobUrl === "string" ? body.jobUrl.trim() : "";
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   // Input is valid and a call will be made — count it against the daily cap.
-  guard.recordSpend();
+  await guard.recordSpend();
 
   // Step 1: Resolve the URL → { jobTitle, companyName, domain } (any source).
   let resolved;
