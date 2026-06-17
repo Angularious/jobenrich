@@ -21,8 +21,8 @@ export async function POST(request: Request) {
   const guard = guardRequest(request, body, "search");
   if (!guard.ok) return guard.response;
 
-  const rawUrl = (body.jobUrl ?? "").trim();
-  if (typeof rawUrl !== "string" || rawUrl.length > MAX_URL_LEN || !isValidJobUrl(rawUrl)) {
+  const rawUrl = typeof body.jobUrl === "string" ? body.jobUrl.trim() : "";
+  if (!rawUrl || rawUrl.length > MAX_URL_LEN || !isValidJobUrl(rawUrl)) {
     return NextResponse.json(
       { error: "Paste a link to a job posting or company careers page." },
       { status: 400 }

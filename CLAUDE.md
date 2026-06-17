@@ -74,7 +74,7 @@ Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan*
 - `lib/people.ts` — `Person` type, normalizers, the three waterfall finders, `simplifyJobTitle`, `extractDomain`. **Add new people sources here**, behind the `waterfall()` runner.
 - `lib/jobResolver.ts` — `resolveJob(url)` (the multi-source URL → `{ jobTitle, companyName, domain }` waterfall), `normalizeCompany()`, JSON-LD parsing, the Serper-render + ScrapeGraphAI-LLM generic path, and the `ATS_HOSTS` domain guard. **Add new job-source handling here.**
 - `lib/validation.ts` — `canonicalizeLinkedInJobUrl`, `isLinkedInHost`, `isValidJobUrl` (any http(s) URL), `isValidLinkedInProfileUrl`, `isValidSchool`.
-- `components/` — `SearchForm` (any-source URL input + rotating placeholder + source chips), `SampleResults` (landing "a peek" preview — real Orthogonal team, click reveals static email + LinkedIn), `ResultsSection`, `PersonCard`, `AlumniFinder`, `EnrichDrawer`, `PipelineProgress` (cosmetic timed steps — not tied to real backend events), `OrthogonalBadge` (unused — replaced by a text credit), `PasswordGate`.
+- `components/` — `SearchForm` (any-source URL input + rotating placeholder + source chips), `SampleResults` (landing "a peek" preview — real Orthogonal team, click reveals static email + LinkedIn), `ResultsSection`, `PersonCard`, `AlumniFinder`, `EnrichDrawer`, `PipelineProgress` (cosmetic timed steps — not tied to real backend events), `PasswordGate`.
 
 ## Conventions
 

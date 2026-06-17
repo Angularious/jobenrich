@@ -24,25 +24,43 @@ export interface ResolvedJob {
   source: "linkedin" | "jsonld" | "llm";
 }
 
-// Hosts that are ATS/job-board infrastructure, not the hiring company — never
-// treat these as the company's own domain.
+// Hosts that are ATS/job-board infrastructure or social/aggregator sites, not
+// the hiring company — never treat these as the company's own domain.
 const ATS_HOSTS =
   /(^|\.)(myworkdayjobs\.com|bamboohr\.com|greenhouse\.io|gem\.com|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|icims\.com|jobvite\.com|taleo\.net|successfactors\.com|paylocity\.com|jobs\.[a-z]+)$/i;
+const NON_COMPANY_HOSTS =
+  /(^|\.)(linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|crunchbase\.com|glassdoor\.com|indeed\.com|youtube\.com)$/i;
 
-const LEGAL_SUFFIX =
-  /[,.]?\s+(inc|incorporated|llc|l\.l\.c\.|ltd|limited|corp|corporation|co|company|gmbh|ag|s\.?a\.?|plc|pte\.?\s*ltd|pty\.?\s*ltd|b\.?v\.?|n\.?v\.?|srl|spa|kk|llp|lp)\.?$/i;
+// Unambiguous legal forms — safe to strip even without a comma.
+const LEGAL_HARD =
+  /[,.]?\s+(incorporated|inc|llc|l\.l\.c\.|ltd|limited|corp|corporation|gmbh|plc|pte\.?\s*ltd|pty\.?\s*ltd|llp|s\.?a\.?r\.?l\.?|srl)\.?$/i;
+// Words that are often part of a real brand ("The Walt Disney Company", a spa,
+// "<X> Co") — only strip when clearly a legal suffix, i.e. set off by a comma.
+const LEGAL_SOFT = /,\s*(co|company|spa|ag|s\.?a\.?|b\.?v\.?|n\.?v\.?|kk|lp)\.?$/i;
 
 /** Strip trailing legal suffixes so "Crocs, Inc." → "Crocs" — the people
- *  providers index companies by common name, not legal entity. */
+ *  providers index companies by common name, not legal entity. Ambiguous
+ *  words (Co/Company/Spa/…) are only stripped after a comma so brand names
+ *  like "The Walt Disney Company" survive. */
 export function normalizeCompany(raw: string): string {
   let name = raw.replace(/\s+/g, " ").trim();
-  // Suffixes can stack ("Foo Inc. LLC"); strip repeatedly.
+  // Suffixes can stack ("Foo, Inc. LLC"); strip repeatedly.
   for (let i = 0; i < 3; i++) {
-    const next = name.replace(LEGAL_SUFFIX, "").trim();
+    const next = name.replace(LEGAL_HARD, "").replace(LEGAL_SOFT, "").trim();
     if (next === name || !next) break;
     name = next;
   }
   return name;
+}
+
+/** The company's own domain from a candidate URL/host, falling back to the
+ *  page host — but never an ATS, social, or aggregator host. */
+function pickDomain(candidate: unknown, pageUrl: string | null): string | null {
+  const d = hostFromUrl(candidate);
+  if (d && !ATS_HOSTS.test(d) && !NON_COMPANY_HOSTS.test(d)) return d;
+  const ph = pageUrl ? hostFromUrl(pageUrl) : null;
+  if (ph && !ATS_HOSTS.test(ph) && !NON_COMPANY_HOSTS.test(ph)) return ph;
+  return null;
 }
 
 /** Best-effort registrable host from a URL or company website string. */
@@ -70,10 +88,11 @@ function linkedInFields(data: Record<string, unknown>): {
   const companyName = String(
     out.company_name ?? out.company ?? out.employer_name ?? out.employer ?? ""
   ).trim();
-  const domain =
-    hostFromUrl(out.company_website ?? out.company_domain ?? out.website ?? out.domain) ??
-    null;
-  return { jobTitle, companyName, domain: domain && !ATS_HOSTS.test(domain) ? domain : null };
+  const domain = pickDomain(
+    out.company_website ?? out.company_domain ?? out.website ?? out.domain,
+    null
+  );
+  return { jobTitle, companyName, domain };
 }
 
 async function resolveLinkedIn(canonicalUrl: string): Promise<ResolvedJob> {
@@ -132,12 +151,7 @@ function fromJsonLd(ld: JobPostingLD, pageUrl: string): ResolvedJob | null {
       : (org?.name ?? "").trim();
   if (!companyName) return null;
   const orgUrl = typeof org === "object" ? org?.url ?? org?.sameAs : undefined;
-  let domain = hostFromUrl(orgUrl);
-  // Fall back to the page host only if it isn't ATS infrastructure.
-  if (!domain) {
-    const pageHost = hostFromUrl(pageUrl);
-    if (pageHost && !ATS_HOSTS.test(pageHost)) domain = pageHost;
-  }
+  const domain = pickDomain(orgUrl, pageUrl);
   return { jobTitle, companyName: normalizeCompany(companyName), domain, source: "jsonld" };
 }
 
@@ -172,11 +186,7 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
   const j = res?.json;
   const companyName = clean(j?.company_name);
   if (!companyName) return null;
-  let domain = hostFromUrl(clean(j?.company_domain));
-  if (!domain) {
-    const pageHost = hostFromUrl(pageUrl);
-    if (pageHost && !ATS_HOSTS.test(pageHost)) domain = pageHost;
-  }
+  const domain = pickDomain(clean(j?.company_domain), pageUrl);
   return {
     jobTitle: clean(j?.job_title),
     companyName: normalizeCompany(companyName),
