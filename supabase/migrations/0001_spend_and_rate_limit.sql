@@ -23,6 +23,7 @@ alter table jobenrich_daily_spend enable row level security;
 create or replace function jobenrich_record_spend(p_day date, p_cost numeric)
 returns numeric
 language plpgsql
+set search_path = public, pg_temp
 as $$
 declare new_total numeric;
 begin
@@ -48,6 +49,7 @@ alter table jobenrich_rate_limits enable row level security;
 create or replace function jobenrich_check_rate_limit(p_key text, p_limit int, p_window_secs int)
 returns table(allowed boolean, remaining int, reset_at timestamptz)
 language plpgsql
+set search_path = public, pg_temp
 as $$
 declare r jobenrich_rate_limits%rowtype;
 begin
@@ -70,6 +72,9 @@ $$;
 
 -- Optional housekeeping: drop expired rate-limit rows. Safe to run on a cron.
 create or replace function jobenrich_prune_rate_limits()
-returns void language sql as $$
+returns void
+language sql
+set search_path = public, pg_temp
+as $$
   delete from jobenrich_rate_limits where reset_at < now();
 $$;
