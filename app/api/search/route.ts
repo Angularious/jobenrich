@@ -1,33 +1,14 @@
 import { NextResponse } from "next/server";
-import { callOrthogonal } from "@/lib/orthogonal";
-import { canonicalizeLinkedInJobUrl } from "@/lib/validation";
+import { isValidJobUrl } from "@/lib/validation";
+import { resolveJob } from "@/lib/jobResolver";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
-import {
-  findSimilarPeople,
-  findRecruiters,
-  simplifyJobTitle,
-  extractDomain,
-} from "@/lib/people";
+import { findSimilarPeople, findRecruiters, simplifyJobTitle } from "@/lib/people";
 
 const MAX_URL_LEN = 2000;
 
-// The job-extract + two parallel waterfalls can chain several upstream calls;
-// give it headroom beyond the Hobby 10s default.
-export const maxDuration = 30;
-
-function extractJobFields(data: Record<string, unknown>): {
-  jobTitle: string;
-  companyName: string;
-  domain: string | null;
-} {
-  // Edges may wrap the result in an `output` key.
-  const out = (data?.output ?? data) as Record<string, unknown>;
-  const jobTitle = String(out.job_title ?? out.title ?? out.position ?? "").trim();
-  const companyName = String(
-    out.company_name ?? out.company ?? out.employer_name ?? out.employer ?? ""
-  ).trim();
-  return { jobTitle, companyName, domain: extractDomain(out) };
-}
+// Resolve (scrape/extract) + two parallel waterfalls can chain several upstream
+// calls; give it headroom (Hobby+Fluid allows up to 300s).
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   let body: GuardBody & { jobUrl?: string };
@@ -40,14 +21,10 @@ export async function POST(request: Request) {
   const guard = guardRequest(request, body, "search");
   if (!guard.ok) return guard.response;
 
-  const rawUrl = body.jobUrl ?? "";
-  if (typeof rawUrl !== "string" || rawUrl.length > MAX_URL_LEN) {
-    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
-  }
-  const canonicalUrl = canonicalizeLinkedInJobUrl(rawUrl);
-  if (!canonicalUrl) {
+  const rawUrl = (body.jobUrl ?? "").trim();
+  if (typeof rawUrl !== "string" || rawUrl.length > MAX_URL_LEN || !isValidJobUrl(rawUrl)) {
     return NextResponse.json(
-      { error: "Couldn't read that job posting. Paste a LinkedIn Jobs URL." },
+      { error: "Paste a link to a job posting or company careers page." },
       { status: 400 }
     );
   }
@@ -55,39 +32,39 @@ export async function POST(request: Request) {
   // Input is valid and a call will be made — count it against the daily cap.
   guard.recordSpend();
 
-  // Step 1: Extract the job (title + company).
-  let jobData: Record<string, unknown>;
+  // Step 1: Resolve the URL → { jobTitle, companyName, domain } (any source).
+  let resolved;
   try {
-    jobData = await callOrthogonal<Record<string, unknown>>({
-      api: "edges",
-      path: "/actions/linkedin-extract-job/run/live",
-      method: "POST",
-      body: { input: { linkedin_job_url: canonicalUrl } },
-    });
+    resolved = await resolveJob(rawUrl);
   } catch (err) {
-    console.error("[search] Job extraction failed:", err);
+    console.error("[search] Job resolution failed:", err);
     return NextResponse.json(
-      { error: "Couldn't read that job posting. Paste a LinkedIn Jobs URL." },
+      { error: "Couldn't read that posting. Try a different link." },
       { status: 502 }
     );
   }
 
-  const { jobTitle, companyName, domain } = extractJobFields(jobData);
+  const { jobTitle, companyName, domain } = resolved;
   if (!companyName) {
     return NextResponse.json(
-      { error: "Couldn't identify the company on that posting. Try another job." },
+      { error: "Couldn't identify the company on that page. Try another link." },
       { status: 422 }
     );
   }
 
-  const searchTitle = simplifyJobTitle(jobTitle);
+  // jobTitle may be null (e.g. a careers index) → company-only people search.
+  const searchTitle = jobTitle ? simplifyJobTitle(jobTitle) : null;
   console.log(
-    `[search] "${jobTitle}" → "${searchTitle}" @ "${companyName}" (domain: ${domain ?? "—"})`
+    `[search] (${resolved.source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"})`
   );
 
   // Step 2: Two waterfalls in parallel — people in similar roles + recruiters.
   const [similar, recruiters] = await Promise.allSettled([
-    findSimilarPeople({ company: companyName, domain, jobTitle: searchTitle }),
+    findSimilarPeople({
+      company: companyName,
+      domain,
+      ...(searchTitle ? { jobTitle: searchTitle } : {}),
+    }),
     findRecruiters({ company: companyName, domain }),
   ]);
 

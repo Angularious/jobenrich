@@ -5,9 +5,9 @@ import { apiPost, primeSecurity, errorMessage } from "@/lib/security/client";
 import { SearchForm } from "@/components/SearchForm";
 import { ResultsSection } from "@/components/ResultsSection";
 import { AlumniFinder } from "@/components/AlumniFinder";
+import { SampleResults } from "@/components/SampleResults";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
 import { PipelineProgress } from "@/components/PipelineProgress";
-import { OrthogonalBadge } from "@/components/OrthogonalBadge";
 import type { PersonData } from "@/components/PersonCard";
 
 interface SearchResults {
@@ -113,37 +113,44 @@ export default function Home() {
     <>
       {/* ── Header ─────────────────────────────────────────── */}
       <header className="border-b-[3px] border-line">
-        <div className="max-w-[860px] mx-auto px-5 sm:px-6 py-6 flex items-center justify-between gap-4">
+        <div className="max-w-[1040px] mx-auto px-5 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="font-display text-6xl sm:text-7xl text-ink leading-[0.85] tracking-tight uppercase">
-              Job Intel
-            </h1>
-            <p className="font-mono font-bold text-acc-red text-xs sm:text-sm mt-2 uppercase tracking-wide">
-              ▌ surface the people behind any job
-            </p>
+            <span className="font-display text-2xl sm:text-3xl text-ink leading-none tracking-tight uppercase">
+              Job Enrich
+            </span>
           </div>
-          <OrthogonalBadge size={116} />
+          {/* Simple linked text credit on all sizes (no animated badge). */}
+          <a
+            href="https://orthogonal.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-none font-mono text-[10px] sm:text-[11px] text-dim uppercase tracking-widest whitespace-nowrap hover:text-acc-red"
+          >
+            powered by orthogonal
+          </a>
         </div>
 
-        {/* Marquee stripe */}
+        {/* Marquee stripe — two identical tracks for a seamless −50% loop. */}
         <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5">
-          <div
-            className="whitespace-nowrap font-mono font-bold text-base text-xs uppercase tracking-widest"
-            style={{ animation: "nbMarquee 18s linear infinite" }}
-          >
-            {Array(6)
-              .fill("★ paste a job ★ meet the team ★ get the intro ")
-              .join("")}
+          <div className="flex w-max" style={{ animation: "nbMarquee 40s linear infinite" }}>
+            {[0, 1].map((i) => (
+              <span
+                key={i}
+                className="whitespace-nowrap font-mono font-bold text-base text-xs uppercase tracking-widest"
+              >
+                {"★ paste a job ★ meet the team ★ get the intro ".repeat(8)}
+              </span>
+            ))}
           </div>
         </div>
       </header>
 
       {/* ── Main ───────────────────────────────────────────── */}
-      <main className="max-w-[860px] mx-auto px-4 sm:px-6 py-8 pb-24">
-        <p className="font-bold text-sm text-muted mb-5 border-l-[3px] border-acc-red pl-3">
-          Paste a LinkedIn job URL. We surface people at that company you should
-          reach out to — plus the recruiters hiring for it.
-        </p>
+      <main className="max-w-[780px] mx-auto px-4 sm:px-6 py-8 sm:py-12 pb-24">
+        {/* Value prop is the focal point; form below, sample preview under it. */}
+        <h2 className="font-display text-4xl sm:text-5xl text-ink leading-[0.92] tracking-tight uppercase mb-6 break-words text-center">
+          Meet the people who can get you in
+        </h2>
 
         <SearchForm
           jobUrl={jobUrl}
@@ -152,6 +159,12 @@ export default function Home() {
           onJobUrlChange={setJobUrl}
           onSubmit={handleSearch}
         />
+
+        {!results && !loading && (
+          <div className="mt-10">
+            <SampleResults />
+          </div>
+        )}
 
         {loading && (
           <div className="nb-card mt-6 p-6" style={{ ["--nb" as string]: "var(--color-acc-blue)" }}>

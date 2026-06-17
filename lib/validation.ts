@@ -27,6 +27,26 @@ export function canonicalizeLinkedInJobUrl(raw: string): string | null {
   }
 }
 
+/** True if the URL is on linkedin.com (so the LinkedIn extractor should run). */
+export function isLinkedInHost(raw: string): boolean {
+  try {
+    return new URL(raw.trim()).hostname.replace(/^www\./, "") === "linkedin.com";
+  } catch {
+    return false;
+  }
+}
+
+/** A plausible http(s) job/careers URL — the only client-side gate now that
+ *  any source is accepted (real extraction happens server-side via resolveJob). */
+export function isValidJobUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw.trim());
+    return (u.protocol === "https:" || u.protocol === "http:") && Boolean(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function isValidLinkedInProfileUrl(url: string): boolean {
   return /^https:\/\/(www\.)?linkedin\.com\/in\//.test(url);
 }

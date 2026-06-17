@@ -1,8 +1,8 @@
 @AGENTS.md
 
-# Job Intel
+# Job Enrich
 
-A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A student/job-seeker pastes a job URL and gets people at that company worth reaching out to, plus recruiters hiring for it. They can then optionally enter their school to surface alumni, and pull contact info for any person on demand. **Powered by Orthogonal.**
+A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind any job posting** — LinkedIn, Indeed, Greenhouse, Lever, Workday, BambooHR, Gem, or a company careers page. A student/job-seeker pastes a job URL and gets people at that company worth reaching out to, plus recruiters hiring for it. They can then optionally enter their school to surface alumni, and pull contact info for any person on demand. **Powered by Orthogonal.**
 
 ## Stack
 
@@ -30,9 +30,12 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 
 **Everything runs on a waterfall model** (ported from a sister demo): within each finder, a step only fires if the previous step returned **zero** people. Cheap/broad sources are tried first, and a fallback only costs money when it's actually needed. All finders live in `lib/people.ts` and return a normalized `Person` ({ name, title, linkedinUrl, profilePictureUrl, source }).
 
-**Search flow** (`app/page.tsx` → `app/api/search/route.ts`) — input is **just the job URL**:
-1. Canonicalize the URL (`lib/validation.ts` → `canonicalizeLinkedInJobUrl`).
-2. Orthogonal `edges/linkedin-extract-job` → job title + company. `simplifyJobTitle()` strips intern/seasonal decorations so ContactOut can match; `extractDomain()` best-effort pulls a company domain for the alumni fallback.
+**Search flow** (`app/page.tsx` → `app/api/search/route.ts`) — input is **any job/careers URL** (LinkedIn, Indeed, Greenhouse, Lever, Workday, BambooHR, Gem, a company careers page, …), gated only by `isValidJobUrl` (http(s) + host):
+1. **`resolveJob(rawUrl)`** (`lib/jobResolver.ts`) turns any URL into `{ jobTitle, companyName, domain }` via a source waterfall — cheap/structured first, LLM only when needed:
+   - **LinkedIn** (`isLinkedInHost`) → `canonicalizeLinkedInJobUrl` → Edges `linkedin-extract-job` ($0.09; LinkedIn is auth-walled so the purpose-built extractor wins).
+   - **Everything else** → **Serper Scrape ($0.02)** which *renders JS* (so it works on SPAs like Workday/BambooHR/Gem that return an empty shell to a plain fetch) → (a) parse a schema.org `JobPosting` **JSON-LD** if present (free, most reliable), else (b) LLM-extract from the rendered markdown via **ScrapeGraphAI `/api/extract` ($0.025)**.
+   - `normalizeCompany()` strips legal suffixes ("Crocs, Inc." → "Crocs") so the people providers match; `ATS_HOSTS` guard prevents using `bamboohr.com`/`myworkdayjobs.com`/etc. as the company's own domain. `jobTitle` may be **null** (a careers index with no single job) → the people search runs **company-only**. Throws on hard upstream failure (502); empty company → 422.
+2. `simplifyJobTitle()` strips intern/seasonal decorations from the resolved title so ContactOut can match.
 3. Run two waterfalls in parallel (`Promise.allSettled`), each with its own error flag:
    - **People (target 5):** ContactOut `people/search` (company + title) → ContactOut (company only) → Coresignal `employee_base/search/filter/preview` (company).
    - **Recruiters (target 3):** ContactOut (company + 13 recruiter titles) → Coresignal (company + title "Recruiter") → Coresignal (company only — founders hire directly).
@@ -45,12 +48,15 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 
 ## Costs (best case = first step hits, the common path; all unit prices verified live against the Orthogonal marketplace)
 
-- **Search:** job extraction ($0.09, always) + People (ContactOut $0.05) + Recruiters (ContactOut $0.05), the two waterfalls in parallel. Fallbacks add $0.05 (ContactOut company-only) or $0.021 (Coresignal preview) each, only when a prior step returned nothing. **Best case $0.19**, worst case ~$0.30 (People $0.121 + Recruiters $0.092 + extract $0.09).
+- **Resolve (varies by source):** LinkedIn = **$0.09** (Edges); everything else = **$0.02** (Serper, JSON-LD hit) → **$0.045** (Serper + ScrapeGraphAI LLM fallback). Non-LinkedIn is *cheaper* than LinkedIn.
+- **People + Recruiters** (same regardless of source): People $0.05 best → $0.121 worst (→ ContactOut company-only → Coresignal); Recruiters $0.05 best → $0.092 worst. Run in parallel.
+- **Search total:** LinkedIn **$0.19** best / ~$0.30 worst; careers/Greenhouse **~$0.12** best / ~$0.26 worst.
 - **Alumni:** $0.05 (→ $0.10 worst case with the domain fallback).
-- **Enrich:** $0.01 (Apollo hit) → $0.04 (Apollo miss + Bytemine) → $0.37 worst case (both miss + ContactOut $0.33). Cached client-side, so paid once per profile.
-- **Full session:** ~$0.25 typical (search + alumni + one enrich, all first-step hits) → ~$0.77 if every fallback fires. The $40/day cap covers ~50–160 sessions/day.
+- **Enrich (per contact):** $0.01 (Apollo hit) → $0.04 (Apollo miss + Bytemine) → $0.37 worst case (both miss + ContactOut $0.33). Cached client-side, so paid once per profile.
+- **Enrich all returned (≤5 people + ≤3 recruiters = 8):** ~$0.08 best (all Apollo) → ~$0.32 mid → ~$2.96 worst (all ContactOut).
+- **Full session (paste + enrich everyone):** ~$0.20–0.27 typical → ~$3.2 absolute worst. The $40/day cap covers ~130–200 typical sessions/day (soft, in-memory).
 
-> Dynamic-priced endpoints: ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` and `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33`. The app pins both to the cheap side ($0.05 / $0.33).
+> Dynamic-priced endpoints: ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` and `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33`; ScrapeGraphAI `/api/extract` adds +$0.025 with `stealth`. The app pins these to the cheap side.
 
 ## Scaling / deployment (audited 2026-06-16)
 
@@ -66,8 +72,9 @@ Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan*
 
 - `lib/orthogonal.ts` — the single `callOrthogonal()` wrapper. **All external API calls go through this.** Hits `api.orthogonal.com/v1/run` with `{ api, path, method, body?, query? }`, throws on `!res.ok` or `!json.success`, returns `json.data` (the provider's raw response body).
 - `lib/people.ts` — `Person` type, normalizers, the three waterfall finders, `simplifyJobTitle`, `extractDomain`. **Add new people sources here**, behind the `waterfall()` runner.
-- `lib/validation.ts` — URL canonicalization + validators (`isValidLinkedInProfileUrl`, `isValidSchool`).
-- `components/` — `SearchForm` (URL only), `ResultsSection`, `PersonCard`, `AlumniFinder`, `EnrichDrawer`, `PipelineProgress` (cosmetic timed steps — not tied to real backend events), `OrthogonalBadge`, `PasswordGate`.
+- `lib/jobResolver.ts` — `resolveJob(url)` (the multi-source URL → `{ jobTitle, companyName, domain }` waterfall), `normalizeCompany()`, JSON-LD parsing, the Serper-render + ScrapeGraphAI-LLM generic path, and the `ATS_HOSTS` domain guard. **Add new job-source handling here.**
+- `lib/validation.ts` — `canonicalizeLinkedInJobUrl`, `isLinkedInHost`, `isValidJobUrl` (any http(s) URL), `isValidLinkedInProfileUrl`, `isValidSchool`.
+- `components/` — `SearchForm` (any-source URL input + rotating placeholder + source chips), `SampleResults` (landing "a peek" preview — real Orthogonal team, click reveals static email + LinkedIn), `ResultsSection`, `PersonCard`, `AlumniFinder`, `EnrichDrawer`, `PipelineProgress` (cosmetic timed steps — not tied to real backend events), `OrthogonalBadge` (unused — replaced by a text credit), `PasswordGate`.
 
 ## Conventions
 

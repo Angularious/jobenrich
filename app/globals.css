@@ -77,6 +77,23 @@ body {
   cursor: not-allowed;
 }
 
+/* Loud primary CTA — solid red fill so the main action out-weighs the
+   secondary source chips. Compound selector so it out-specifies .nb-btn's
+   white background (equal-specificity source order isn't reliable under
+   Tailwind v4's cascade layers). Inverts to black on hover. */
+.nb-btn.nb-btn-primary {
+  background-color: var(--color-acc-red);
+  color: #FFFFFF;
+}
+.nb-btn.nb-btn-primary:hover:not(:disabled) {
+  background-color: var(--color-ink);
+  color: #FFFFFF;
+}
+.nb-btn.nb-btn-primary:active:not(:disabled) {
+  background-color: var(--color-line);
+  color: #FFFFFF;
+}
+
 .nb-input {
   background-color: #FFFFFF;
   border: 3px solid var(--color-line);
