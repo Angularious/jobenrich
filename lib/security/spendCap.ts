@@ -38,7 +38,7 @@ export async function withinCap(costUsd: number): Promise<boolean> {
   if (sb) {
     try {
       const { data, error } = await sb
-        .from("daily_spend")
+        .from("jobenrich_daily_spend")
         .select("usd")
         .eq("day", todayUTC())
         .maybeSingle();
@@ -56,7 +56,7 @@ export async function recordSpend(costUsd: number): Promise<void> {
   const sb = getSupabase();
   if (sb) {
     try {
-      const { error } = await sb.rpc("record_spend", { p_day: todayUTC(), p_cost: costUsd });
+      const { error } = await sb.rpc("jobenrich_record_spend", { p_day: todayUTC(), p_cost: costUsd });
       if (error) throw error;
       return;
     } catch (err) {

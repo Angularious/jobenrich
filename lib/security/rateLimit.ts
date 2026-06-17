@@ -37,7 +37,7 @@ export async function checkRateLimit(
   const sb = getSupabase();
   if (sb) {
     try {
-      const { data, error } = await sb.rpc("check_rate_limit", {
+      const { data, error } = await sb.rpc("jobenrich_check_rate_limit", {
         p_key: key,
         p_limit: limit,
         p_window_secs: Math.round(windowMs / 1000),
