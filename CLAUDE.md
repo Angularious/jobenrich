@@ -23,7 +23,7 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 
 **This is a public demo — no login.** Access is controlled by Level 1 abuse protections (audit-driven), all in `lib/security/`:
 - `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Returns `recordSpend()` to call after the upstream work.
-- `rateLimit.ts` / `spendCap.ts` — in-memory (module-level Map / counter). **Level 1 caveat:** counters don't persist across serverless instances or redeploys — fine for a low-traffic demo; move to Upstash Redis at 50+ daily users.
+- `rateLimit.ts` / `spendCap.ts` — in-memory (module-level Map / counter). **Level 1 caveat:** the counters are plain JS variables in one serverless instance's RAM. They do **not** persist across instances or redeploys, so under real concurrency the `$40` cap leaks to roughly `$40 × (live instances)` and a redeploy zeroes the daily tally. Fine for a low-traffic demo (Vercel usually serves from a single warm instance at low traffic, and ~100 users only spend ~$20–30 total so the cap is never reached). **The cap becomes airtight only when both counters move to a shared, atomic, persistent store** — use the **Supabase free project** (already available; a `daily_spend` row + `rate_limits` table mutated via atomic Postgres functions/RPC), **not Upstash** (the old plan; Supabase is on hand so no new dependency). See the **Scaling / deployment** section.
 - `tokens.ts` + `app/api/init/route.ts` — issue/verify the signed request token (CSRF) and page-load stamp (timing); the client fetches them on mount.
 - `client.ts` — client helper: builds the composite fingerprint (IP + localStorage session token + UA/screen/tz/lang/platform), primes the token, and `apiPost()`s with all signals. `errorMessage()` renders 429/503 messages.
 - Limits: **10 / step / day** per visitor, 24h reset; cap **$40/day**.
@@ -51,6 +51,16 @@ A Next.js 16 app that surfaces the **people behind any LinkedIn job posting**. A
 - **Full session:** ~$0.25 typical (search + alumni + one enrich, all first-step hits) → ~$0.77 if every fallback fires. The $40/day cap covers ~50–160 sessions/day.
 
 > Dynamic-priced endpoints: ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` and `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33`. The app pins both to the cheap side ($0.05 / $0.33).
+
+## Scaling / deployment (audited 2026-06-16)
+
+Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan**, with a **Supabase free** project available but **not yet wired in**. `REQUEST_TOKEN_SECRET` and a working `ORTHOGONAL_API_KEY` (`orth_live_…`) are confirmed set in Vercel prod. Verdict from the audit: **fine as-is for ~100 users; do NOT ship publicly at scale (hundreds–thousands) without the fixes below.**
+
+- **~100 users: nothing breaks.** Spend ≈ $20–30 total (under the cap), traffic stays on ~1 warm instance so the in-memory cap/rate-limit are approximately correct. The only real exposure is abuse (rate limit resets on cold start/redeploy), bounded by the global cap to ~$40–80/day.
+- **Global hard cap** — works *only* as an atomic operation on shared storage. Plan: move `spendCap.ts`/`rateLimit.ts` to the Supabase free project via `@supabase/supabase-js` (HTTP/PostgREST or the **Supavisor pooler port 6543**, never direct connections — free tier is **60 direct / 200 pooled**). Combine check-and-increment into one atomic RPC (the current `withinCap()`-then-`recordSpend()` is a two-step TOCTOU race even on one instance).
+- **Vercel Hobby is non-commercial-only** ([ToS](https://vercel.com/legal/terms)). A public, Orthogonal-branded demo built by an Orthogonal employee is commercial; Vercel may shut it down without notice, and Hobby pauses (no overage billing) if a spike exceeds included usage. **A public scale launch needs Vercel Pro ($20/mo).** (Note: Hobby+Fluid-compute already allows `maxDuration` up to 300s, so the `maxDuration = 30` on `search`/`alumni` is fine — the "Hobby 10s" code comment is stale. `enrich` has no `maxDuration` set.)
+- **Supabase free pauses after 7 days idle** (~30s to resume) → add a keep-alive ping (GitHub Action cron) and make the cap/rate-limit **fail open to the in-memory counter** if Supabase is unreachable, so a paused DB never takes the whole site down.
+- **No server-side cache** — `enrichCache` is client-side per browser; searches aren't cached at all. At scale with overlapping queries (e.g. a class researching the same companies), this re-pays for every repeat. A Supabase-backed search + enrich cache is the biggest cost lever and is what reconciles "serve many people" with a bounded daily spend. `$40/day` only covers ~150–200 uncached full sessions, so a working hard cap = most users get a 503 once it's hit unless caching cuts cost-per-unique-lookup.
 
 ## Key files
 
