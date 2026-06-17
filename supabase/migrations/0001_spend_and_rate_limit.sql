@@ -9,6 +9,11 @@ create table if not exists daily_spend (
   usd  numeric not null default 0
 );
 
+-- RLS ON with NO policies: the public anon key cannot read/tamper with these
+-- tables via the REST API, while the server-side service_role key bypasses RLS
+-- and does all the work. This is the secure default and silences the linter.
+alter table daily_spend enable row level security;
+
 -- Atomically add cost to today's total and return the new total.
 create or replace function record_spend(p_day date, p_cost numeric)
 returns numeric
@@ -29,6 +34,9 @@ create table if not exists rate_limits (
   count     int not null default 0,
   reset_at  timestamptz not null
 );
+
+-- Same as above: anon blocked, service_role bypasses.
+alter table rate_limits enable row level security;
 
 -- Atomically check-and-increment. Returns whether the call is allowed,
 -- how many remain, and when the window resets.
