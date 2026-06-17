@@ -18,6 +18,8 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - `NEXT_PUBLIC_APP_URL` — public deployment origin, used for same-origin checks on API routes.
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — **optional**. When both are set (and `supabase/migrations/0001_*.sql` has been run), the spend cap + rate limiter use Supabase so they hold across all serverless instances. Unset → the in-memory per-instance counters are used (fine for a low-traffic demo). Service-role key is server-side only — never `NEXT_PUBLIC_`. Free tier is sufficient.
 
+> **⚠ Shared Supabase project:** this project's Supabase instance is **shared with other demo sites**. That's why every object here is `jobenrich_`-prefixed — our tables/functions are isolated from the other demos (separate cap + rate-limit state). **Do not** rename/drop the `jobenrich_*` objects expecting them to be the only thing in the project, and **never** touch un-prefixed or other apps' objects. Note the **free-tier quotas are shared** across all demos on the project (DB size, the 7-day inactivity pause, connection pool) — so keep usage light and prefer the REST transport (already used) over raw connections.
+
 > **⚠ Status: `.env.local` still holds a placeholder `ORTHOGONAL_API_KEY` (`orth_live_xxxxx`)** and `REQUEST_TOKEN_SECRET` must be set before deploy. The app **cannot reach Orthogonal** until a real key is dropped in. The waterfall pipeline was validated out-of-band through the Orthogonal MCP tools (job extract, ContactOut search, and the Apollo/Bytemine/ContactOut enrich steps each confirmed to return live data). One branch remains unverified end-to-end: the **Coresignal fallback** (fires only when ContactOut returns zero). See `.env.example`.
 
 ## Architecture / data flow
