@@ -6,6 +6,12 @@ import { findSimilarPeople, findRecruiters, simplifyJobTitle } from "@/lib/peopl
 
 const MAX_URL_LEN = 2000;
 
+// Shown when a URL can't be read into a company — usually an application
+// portal (ADP, iCIMS, Taleo…) that blocks automated reading. Point the user
+// at sources that work instead of leaving them guessing.
+const UNREADABLE_MSG =
+  "We couldn't read that link — some application portals (e.g. ADP) block automated reading. Try the role on LinkedIn, or a Greenhouse, Workday, or company careers page link.";
+
 // Resolve (scrape/extract) + two parallel waterfalls can chain several upstream
 // calls; give it headroom (Hobby+Fluid allows up to 300s).
 export const maxDuration = 60;
@@ -39,17 +45,14 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error("[search] Job resolution failed:", err);
     return NextResponse.json(
-      { error: "Couldn't read that posting. Try a different link." },
+      { error: UNREADABLE_MSG },
       { status: 502 }
     );
   }
 
   const { jobTitle, companyName, domain } = resolved;
   if (!companyName) {
-    return NextResponse.json(
-      { error: "Couldn't identify the company on that page. Try another link." },
-      { status: 422 }
-    );
+    return NextResponse.json({ error: UNREADABLE_MSG }, { status: 422 });
   }
 
   // jobTitle may be null (e.g. a careers index) → company-only people search.

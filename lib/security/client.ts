@@ -98,15 +98,18 @@ export async function apiPost<T = unknown>(
 }
 
 interface ErrorShape {
-  message?: string;
+  message?: string; // guard responses (403/429/503)
+  error?: string; // route responses (400/422/502)
   retryAfter?: string;
 }
 
-/** Turn a guarded API response into a human-readable message for the UI. */
+/** Turn a guarded API response into a human-readable message for the UI.
+ *  Guards put the text in `message`; routes put it in `error` — surface both. */
 export function errorMessage(r: ApiResult<unknown>, fallback: string): string {
   const d = (r.data ?? {}) as ErrorShape;
+  const text = d.message ?? d.error;
   if (r.status === 429 && d.retryAfter) {
-    return `${d.message ?? "You've hit today's limit."} Try again in ${d.retryAfter}.`;
+    return `${text ?? "You've hit today's limit."} Try again in ${d.retryAfter}.`;
   }
-  return d.message ?? fallback;
+  return text ?? fallback;
 }
