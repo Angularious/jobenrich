@@ -6,6 +6,7 @@ import { SearchForm } from "@/components/SearchForm";
 import { ResultsSection } from "@/components/ResultsSection";
 import { AlumniFinder } from "@/components/AlumniFinder";
 import { SampleResults } from "@/components/SampleResults";
+import { HiringAd } from "@/components/HiringAd";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
 import { PipelineProgress } from "@/components/PipelineProgress";
 import type { PersonData } from "@/components/PersonCard";
@@ -222,6 +223,8 @@ export default function Home() {
         error={enrichError}
         onClose={closeDrawer}
       />
+
+      <HiringAd />
     </>
   );
 }
