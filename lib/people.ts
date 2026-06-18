@@ -144,46 +144,63 @@ export interface FinderInput {
 }
 
 // People in similar roles at the company — target 5.
+// Domain (when known) is a far stronger company match than the name, which is
+// often ambiguous ("Orthogonal" → several companies). So try domain-filtered
+// searches first, then fall back to name-based ones.
 export function findSimilarPeople(
   input: FinderInput & { jobTitle?: string }
 ): Promise<Person[]> {
-  const { company, jobTitle } = input;
+  const { company, domain, jobTitle } = input;
   const LIMIT = 5;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
-  return waterfall("similar", [
-    () =>
-      contactOutSearch({
-        company: [company],
-        ...(titles.length ? { job_title: titles } : {}),
-      }).then((r) => fromContactOut(r, LIMIT)),
-    () => contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT)),
-    () =>
-      coresignalSearch({ experience_company_name: company }).then((r) =>
-        fromCoresignal(r, LIMIT, company)
-      ),
-  ]);
+  const steps: Array<() => Promise<Person[]>> = [];
+  if (domain) {
+    if (titles.length)
+      steps.push(() =>
+        contactOutSearch({ domain: [domain], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
+      );
+    steps.push(() => contactOutSearch({ domain: [domain] }).then((r) => fromContactOut(r, LIMIT)));
+  }
+  if (titles.length)
+    steps.push(() =>
+      contactOutSearch({ company: [company], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
+    );
+  steps.push(() => contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT)));
+  steps.push(() =>
+    coresignalSearch({ experience_company_name: company }).then((r) => fromCoresignal(r, LIMIT, company))
+  );
+  return waterfall("similar", steps);
 }
 
 // Recruiters / talent at the company — target 3.
 export function findRecruiters(input: FinderInput): Promise<Person[]> {
-  const { company } = input;
+  const { company, domain } = input;
   const LIMIT = 3;
-  return waterfall("recruiters", [
-    () =>
-      contactOutSearch({ company: [company], job_title: RECRUITER_TITLES }).then((r) =>
+  const steps: Array<() => Promise<Person[]>> = [];
+  if (domain)
+    steps.push(() =>
+      contactOutSearch({ domain: [domain], job_title: RECRUITER_TITLES }).then((r) =>
         fromContactOut(r, LIMIT)
-      ),
-    () =>
-      coresignalSearch({
-        experience_company_name: company,
-        experience_title: "Recruiter",
-      }).then((r) => fromCoresignal(r, LIMIT, company)),
-    // Founders/early teams often hire directly — fall back to anyone at the company.
-    () =>
-      coresignalSearch({ experience_company_name: company }).then((r) =>
-        fromCoresignal(r, LIMIT, company)
-      ),
-  ]);
+      )
+    );
+  steps.push(() =>
+    contactOutSearch({ company: [company], job_title: RECRUITER_TITLES }).then((r) =>
+      fromContactOut(r, LIMIT)
+    )
+  );
+  steps.push(() =>
+    coresignalSearch({
+      experience_company_name: company,
+      experience_title: "Recruiter",
+    }).then((r) => fromCoresignal(r, LIMIT, company))
+  );
+  // Founders/early teams often hire directly — fall back to anyone at the company.
+  steps.push(() =>
+    coresignalSearch({ experience_company_name: company }).then((r) =>
+      fromCoresignal(r, LIMIT, company)
+    )
+  );
+  return waterfall("recruiters", steps);
 }
 
 // Alumni from a given school at the company — target 5.

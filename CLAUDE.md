@@ -39,9 +39,9 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
    - **Everything else** → **Serper Scrape ($0.02)** which *renders JS* (so it works on SPAs like Workday/BambooHR/Gem that return an empty shell to a plain fetch) → (a) parse a schema.org `JobPosting` **JSON-LD** if present (free, most reliable), else (b) LLM-extract from the rendered markdown via **ScrapeGraphAI `/api/extract` ($0.025)**.
    - `normalizeCompany()` strips legal suffixes ("Crocs, Inc." → "Crocs") so the people providers match; `ATS_HOSTS` guard prevents using `bamboohr.com`/`myworkdayjobs.com`/etc. as the company's own domain. `jobTitle` may be **null** (a careers index with no single job) → the people search runs **company-only**. Throws on hard upstream failure (502); empty company → 422.
 2. `simplifyJobTitle()` strips intern/seasonal decorations from the resolved title so ContactOut can match.
-3. Run two waterfalls in parallel (`Promise.allSettled`), each with its own error flag:
-   - **People (target 5):** ContactOut `people/search` (company + title) → ContactOut (company only) → Coresignal `employee_base/search/filter/preview` (company).
-   - **Recruiters (target 3):** ContactOut (company + 13 recruiter titles) → Coresignal (company + title "Recruiter") → Coresignal (company only — founders hire directly).
+3. Run two waterfalls in parallel (`Promise.allSettled`), each with its own error flag. **`domain` (when known) is tried before `company` name** — the name is often ambiguous (e.g. "Orthogonal" → several companies), and a ContactOut `domain` filter disambiguates to the exact company:
+   - **People (target 5):** ContactOut `people/search` (domain + title) → (domain only) → (company + title) → (company only) → Coresignal `employee_base/search/filter/preview` (company). Domain steps are skipped when no domain was resolved.
+   - **Recruiters (target 3):** ContactOut (domain + 13 recruiter titles) → (company + recruiter titles) → Coresignal (company + title "Recruiter") → Coresignal (company only — founders hire directly).
 
 **Alumni flow** (`components/AlumniFinder.tsx` → `app/api/alumni/route.ts`) — opt-in secondary action; the school is **not** asked for up front. Takes company + domain (from the search response) + school: ContactOut (company + education) → ContactOut (domain + education, only if a domain was found).
 
@@ -52,8 +52,8 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 ## Costs (best case = first step hits, the common path; all unit prices verified live against the Orthogonal marketplace)
 
 - **Resolve (varies by source):** LinkedIn = **$0.09** (Edges); everything else = **$0.02** (Serper, JSON-LD hit) → **$0.045** (Serper + ScrapeGraphAI LLM fallback). Non-LinkedIn is *cheaper* than LinkedIn.
-- **People + Recruiters** (same regardless of source): People $0.05 best → $0.121 worst (→ ContactOut company-only → Coresignal); Recruiters $0.05 best → $0.092 worst. Run in parallel.
-- **Search total:** LinkedIn **$0.19** best / ~$0.30 worst; careers/Greenhouse **~$0.12** best / ~$0.26 worst.
+- **People + Recruiters** (same regardless of source): each ContactOut step is $0.05, Coresignal $0.021. Best $0.05 (first step hits). Worst case rose with the added domain steps — People ~$0.22 (domain+title → domain → company+title → company → Coresignal), Recruiters ~$0.14 — but only when every prior step returns zero. Run in parallel.
+- **Search total:** LinkedIn **$0.19** best / ~$0.45 worst; careers/Greenhouse **~$0.12** best / ~$0.40 worst.
 - **Alumni:** $0.05 (→ $0.10 worst case with the domain fallback).
 - **Enrich (per contact):** $0.01 (Apollo hit) → $0.04 (Apollo miss + Bytemine) → $0.37 worst case (both miss + ContactOut $0.33). Cached client-side, so paid once per profile.
 - **Enrich all returned (≤5 people + ≤3 recruiters = 8):** ~$0.08 best (all Apollo) → ~$0.32 mid → ~$2.96 worst (all ContactOut).

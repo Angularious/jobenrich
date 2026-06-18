@@ -27,8 +27,11 @@ function AdCard({ onClose }: { onClose: () => void }) {
         ★ orthogonal is hiring
       </p>
       <p className="font-mono text-sm font-bold text-ink leading-snug">Founding Engineer</p>
+      <p className="font-mono text-[11px] font-bold text-ink leading-snug">
+        San Francisco · YC W26
+      </p>
       <p className="font-mono text-[11px] font-bold text-ink mb-3 leading-snug">
-        San Francisco · $150–220K + equity · YC W26
+        $150–220K + equity
       </p>
       <a
         href={CAREERS_URL}
