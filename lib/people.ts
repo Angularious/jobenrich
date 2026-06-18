@@ -1,3 +1,4 @@
+import { getDomain } from "tldts";
 import { callOrthogonal } from "@/lib/orthogonal";
 
 export interface Person {
@@ -145,10 +146,13 @@ export interface FinderInput {
 
 // People in similar roles at the company — target 5.
 // A resolved `domain` is a strong, unambiguous company match; the name alone
-// matches namesakes ("Orthogonal" → several companies). So when we have a
-// domain we search by domain ONLY — better to return nothing than people from
-// a different same-named company. Name + Coresignal steps are the fallback for
-// when no domain was resolved.
+// matches namesakes ("Orthogonal" → several companies). So we try the domain
+// FIRST and prefer it. But the domain can be imperfect (e.g. resolved from a
+// page host the provider doesn't index), and a domain miss returns zero — so
+// the company-name + Coresignal steps run AFTER as a fallback that only fires
+// when the domain found nobody (waterfall = fire-only-on-empty). A name match
+// beats returning nobody; the same-namesake risk only applies when domain
+// returns the WRONG people, not when it returns none.
 export function findSimilarPeople(
   input: FinderInput & { jobTitle?: string }
 ): Promise<Person[]> {
@@ -156,57 +160,61 @@ export function findSimilarPeople(
   const LIMIT = 5;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<Person[]>> = [];
+  // Precise: domain-only (when we have one) — tried first.
   if (domain) {
     if (titles.length)
       steps.push(() =>
         contactOutSearch({ domain: [domain], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
       );
     steps.push(() => contactOutSearch({ domain: [domain] }).then((r) => fromContactOut(r, LIMIT)));
-  } else {
-    if (titles.length)
-      steps.push(() =>
-        contactOutSearch({ company: [company], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
-      );
-    steps.push(() => contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT)));
-    steps.push(() =>
-      coresignalSearch({ experience_company_name: company }).then((r) => fromCoresignal(r, LIMIT, company))
-    );
   }
+  // Fallback: company name (primary path when no domain was resolved; safety
+  // net for an imperfect domain otherwise).
+  if (titles.length)
+    steps.push(() =>
+      contactOutSearch({ company: [company], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
+    );
+  steps.push(() => contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT)));
+  steps.push(() =>
+    coresignalSearch({ experience_company_name: company }).then((r) => fromCoresignal(r, LIMIT, company))
+  );
   return waterfall("similar", steps);
 }
 
-// Recruiters / talent at the company — target 3. Same domain-first rule: with a
-// domain we only match recruiters at that exact company (none → empty, which is
-// correct); without one we fall back to name + Coresignal.
+// Recruiters / talent at the company — target 3. Domain-first, same as the
+// people finder: match recruiters at the exact domain first, then fall back to
+// the company name + Coresignal only if that found nobody (so an imperfect
+// domain no longer means an empty recruiter list).
 export function findRecruiters(input: FinderInput): Promise<Person[]> {
   const { company, domain } = input;
   const LIMIT = 3;
   const steps: Array<() => Promise<Person[]>> = [];
+  // Precise: recruiters at the exact domain.
   if (domain) {
     steps.push(() =>
       contactOutSearch({ domain: [domain], job_title: RECRUITER_TITLES }).then((r) =>
         fromContactOut(r, LIMIT)
       )
     );
-  } else {
-    steps.push(() =>
-      contactOutSearch({ company: [company], job_title: RECRUITER_TITLES }).then((r) =>
-        fromContactOut(r, LIMIT)
-      )
-    );
-    steps.push(() =>
-      coresignalSearch({
-        experience_company_name: company,
-        experience_title: "Recruiter",
-      }).then((r) => fromCoresignal(r, LIMIT, company))
-    );
-    // Founders/early teams often hire directly — fall back to anyone at the company.
-    steps.push(() =>
-      coresignalSearch({ experience_company_name: company }).then((r) =>
-        fromCoresignal(r, LIMIT, company)
-      )
-    );
   }
+  // Fallback by company name (primary when no domain; safety net otherwise).
+  steps.push(() =>
+    contactOutSearch({ company: [company], job_title: RECRUITER_TITLES }).then((r) =>
+      fromContactOut(r, LIMIT)
+    )
+  );
+  steps.push(() =>
+    coresignalSearch({
+      experience_company_name: company,
+      experience_title: "Recruiter",
+    }).then((r) => fromCoresignal(r, LIMIT, company))
+  );
+  // Founders/early teams often hire directly — fall back to anyone at the company.
+  steps.push(() =>
+    coresignalSearch({ experience_company_name: company }).then((r) =>
+      fromCoresignal(r, LIMIT, company)
+    )
+  );
   return waterfall("recruiters", steps);
 }
 
@@ -214,22 +222,20 @@ export function findRecruiters(input: FinderInput): Promise<Person[]> {
 export function findAlumni(input: FinderInput & { school: string }): Promise<Person[]> {
   const { company, domain, school } = input;
   const LIMIT = 5;
-  // Domain-first, same as the other finders: with a domain, match alumni at the
-  // exact company only (avoids same-named-company alumni); without one, fall
-  // back to the company name.
-  const steps = domain
-    ? [
-        () =>
-          contactOutSearch({ domain: [domain], education: [school] }).then((r) =>
-            fromContactOut(r, LIMIT)
-          ),
-      ]
-    : [
-        () =>
-          contactOutSearch({ company: [company], education: [school] }).then((r) =>
-            fromContactOut(r, LIMIT)
-          ),
-      ];
+  // Domain-first, same as the other finders: match alumni at the exact domain
+  // first, then fall back to the company name only if that found nobody.
+  const steps: Array<() => Promise<Person[]>> = [];
+  if (domain)
+    steps.push(() =>
+      contactOutSearch({ domain: [domain], education: [school] }).then((r) =>
+        fromContactOut(r, LIMIT)
+      )
+    );
+  steps.push(() =>
+    contactOutSearch({ company: [company], education: [school] }).then((r) =>
+      fromContactOut(r, LIMIT)
+    )
+  );
   return waterfall("alumni", steps);
 }
 
@@ -273,13 +279,10 @@ export function extractDomain(out: Record<string, unknown>): string | null {
   ];
   for (const c of candidates) {
     if (typeof c !== "string" || !c.trim()) continue;
-    try {
-      const url = c.startsWith("http") ? c : `https://${c}`;
-      const host = new URL(url).hostname.replace(/^www\./, "");
-      if (host && !host.endsWith("linkedin.com")) return host;
-    } catch {
-      /* not a URL — skip */
-    }
+    // PSL-reduce to the apex (careers.acme.com → acme.com) so the domain is one
+    // a people provider can actually match — same rule as jobResolver.
+    const host = getDomain(c.startsWith("http") ? c : `https://${c}`);
+    if (host && !host.endsWith("linkedin.com")) return host;
   }
   return null;
 }

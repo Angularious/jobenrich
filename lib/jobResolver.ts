@@ -1,3 +1,4 @@
+import { getDomain } from "tldts";
 import { callOrthogonal } from "./orthogonal";
 import { canonicalizeLinkedInJobUrl, isLinkedInHost } from "./validation";
 
@@ -63,16 +64,17 @@ function pickDomain(candidate: unknown, pageUrl: string | null): string | null {
   return null;
 }
 
-/** Best-effort registrable host from a URL or company website string. */
+/** Best-effort registrable (apex) domain from a URL or company website string.
+ *  Backed by the Public Suffix List (tldts), so "careers.sharkninja.com" →
+ *  "sharkninja.com", "jobs.acme.co.uk" → "acme.co.uk", etc. People providers
+ *  index companies by their apex marketing domain, never a careers/jobs/apply
+ *  subdomain — collapsing to the registrable domain here is what makes the
+ *  domain-first search actually match. Handles multi-part TLDs correctly, so
+ *  there's no hand-maintained list of subdomain prefixes to keep in sync. */
 function hostFromUrl(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
-  try {
-    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
-    const host = u.hostname.replace(/^www\./, "");
-    return host || null;
-  } catch {
-    return null;
-  }
+  const withProto = raw.startsWith("http") ? raw : `https://${raw}`;
+  return getDomain(withProto) || null;
 }
 
 /* ── LinkedIn branch (Edges) ─────────────────────────────────────────── */
