@@ -15,6 +15,7 @@ interface ResultsSectionProps {
   onEnrich: (person: PersonData) => void;
   variant?: keyof typeof VARIANTS;
   enrichedUrls?: Set<string>;
+  emptyMessage?: string;
 }
 
 export function ResultsSection({
@@ -25,6 +26,7 @@ export function ResultsSection({
   onEnrich,
   variant = "yellow",
   enrichedUrls,
+  emptyMessage = "Nobody surfaced for this company.",
 }: ResultsSectionProps) {
   const accent = VARIANTS[variant];
 
@@ -54,8 +56,8 @@ export function ResultsSection({
             ⚠ Lookup failed — try again
           </div>
         ) : people.length === 0 ? (
-          <div className="px-4 py-6 text-center text-dim text-sm font-bold font-mono">
-            — nobody surfaced —
+          <div className="px-4 py-6 text-center text-dim text-xs font-bold font-mono leading-relaxed">
+            {emptyMessage}
           </div>
         ) : (
           people.map((person, i) => (

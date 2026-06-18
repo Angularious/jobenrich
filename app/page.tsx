@@ -195,6 +195,7 @@ export default function Home() {
               onEnrich={handleEnrich}
               variant="blue"
               enrichedUrls={enrichedUrls}
+              emptyMessage="No matching people surfaced for this company yet. Try a broader role, or check the recruiters below."
             />
             <ResultsSection
               title="Recruiters"
@@ -204,6 +205,7 @@ export default function Home() {
               onEnrich={handleEnrich}
               variant="green"
               enrichedUrls={enrichedUrls}
+              emptyMessage="No recruiters found at this company — early-stage teams often hire directly, so reach out to the people above."
             />
 
             <AlumniFinder
