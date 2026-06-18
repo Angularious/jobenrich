@@ -28,7 +28,7 @@ export interface ResolvedJob {
 // Hosts that are ATS/job-board infrastructure or social/aggregator sites, not
 // the hiring company — never treat these as the company's own domain.
 const ATS_HOSTS =
-  /(^|\.)(myworkdayjobs\.com|bamboohr\.com|greenhouse\.io|gem\.com|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|icims\.com|jobvite\.com|taleo\.net|successfactors\.com|paylocity\.com|jobs\.[a-z]+)$/i;
+  /(^|\.)(myworkdayjobs\.com|bamboohr\.com|greenhouse\.io|gem\.com|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|icims\.com|jobvite\.com|taleo\.net|successfactors\.com|paylocity\.com|eddy\.com|jobs\.[a-z]+)$/i;
 const NON_COMPANY_HOSTS =
   /(^|\.)(linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|crunchbase\.com|glassdoor\.com|indeed\.com|youtube\.com)$/i;
 
