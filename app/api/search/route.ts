@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { jobTitle, companyName, domain } = resolved;
+  const { jobTitle, companyName, domain, jobLocation } = resolved;
   if (!companyName) {
     return NextResponse.json({ error: UNREADABLE_MSG }, { status: 422 });
   }
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
   // jobTitle may be null (e.g. a careers index) → company-only people search.
   const searchTitle = jobTitle ? simplifyJobTitle(jobTitle) : null;
   console.log(
-    `[search] (${resolved.source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"})`
+    `[search] (${resolved.source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"}, location: ${jobLocation ?? "—"})`
   );
 
   // Step 2: Two waterfalls in parallel — people in similar roles + recruiters.
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       domain,
       ...(searchTitle ? { jobTitle: searchTitle } : {}),
     }),
-    findRecruiters({ company: companyName, domain }),
+    findRecruiters({ company: companyName, domain, location: jobLocation }),
   ]);
 
   return NextResponse.json({

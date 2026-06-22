@@ -142,6 +142,7 @@ async function waterfall(
 export interface FinderInput {
   company: string;
   domain?: string | null;
+  location?: string | null;
 }
 
 // People in similar roles at the company — target 5.
@@ -181,23 +182,52 @@ export function findSimilarPeople(
   return waterfall("similar", steps);
 }
 
+// "Remote" / "Worldwide" / "Anywhere" locations don't map to a real place —
+// passing them to ContactOut's location filter would just return nobody.
+function isVirtualLocation(loc: string): boolean {
+  return /\b(remote|anywhere|worldwide|global|distributed|hybrid)\b/i.test(loc);
+}
+
 // Recruiters / talent at the company — target 3. Domain-first, same as the
 // people finder: match recruiters at the exact domain first, then fall back to
 // the company name + Coresignal only if that found nobody (so an imperfect
 // domain no longer means an empty recruiter list).
+//
+// When a job location is known (e.g. "Boston, MA, United States"), each
+// ContactOut step is tried WITH the location filter first — if that returns
+// nobody the waterfall falls through to the same step without the filter, so
+// a too-specific location never blocks results entirely.
 export function findRecruiters(input: FinderInput): Promise<Person[]> {
   const { company, domain } = input;
+  const loc =
+    input.location && !isVirtualLocation(input.location) ? input.location : null;
   const LIMIT = 3;
   const steps: Array<() => Promise<Person[]>> = [];
+
   // Precise: recruiters at the exact domain.
   if (domain) {
+    // With location filter first (more targeted).
+    if (loc)
+      steps.push(() =>
+        contactOutSearch({ domain: [domain], job_title: RECRUITER_TITLES, location: [loc] }).then(
+          (r) => fromContactOut(r, LIMIT)
+        )
+      );
+    // Without location filter (fallback when location is too narrow).
     steps.push(() =>
       contactOutSearch({ domain: [domain], job_title: RECRUITER_TITLES }).then((r) =>
         fromContactOut(r, LIMIT)
       )
     );
   }
+
   // Fallback by company name (primary when no domain; safety net otherwise).
+  if (loc)
+    steps.push(() =>
+      contactOutSearch({ company: [company], job_title: RECRUITER_TITLES, location: [loc] }).then(
+        (r) => fromContactOut(r, LIMIT)
+      )
+    );
   steps.push(() =>
     contactOutSearch({ company: [company], job_title: RECRUITER_TITLES }).then((r) =>
       fromContactOut(r, LIMIT)

@@ -22,6 +22,7 @@ export interface ResolvedJob {
   jobTitle: string | null;
   companyName: string;
   domain: string | null;
+  jobLocation: string | null;
   source: "linkedin" | "jsonld" | "llm";
 }
 
@@ -83,6 +84,7 @@ function linkedInFields(data: Record<string, unknown>): {
   jobTitle: string | null;
   companyName: string;
   domain: string | null;
+  jobLocation: string | null;
 } {
   const out = (data?.output ?? data) as Record<string, unknown>;
   const jobTitle =
@@ -94,7 +96,9 @@ function linkedInFields(data: Record<string, unknown>): {
     out.company_website ?? out.company_domain ?? out.website ?? out.domain,
     null
   );
-  return { jobTitle, companyName, domain };
+  const jobLocation =
+    String(out.location ?? out.job_location ?? out.formatted_location ?? "").trim() || null;
+  return { jobTitle, companyName, domain, jobLocation };
 }
 
 async function resolveLinkedIn(canonicalUrl: string): Promise<ResolvedJob> {
@@ -104,8 +108,8 @@ async function resolveLinkedIn(canonicalUrl: string): Promise<ResolvedJob> {
     method: "POST",
     body: { input: { linkedin_job_url: canonicalUrl } },
   });
-  const { jobTitle, companyName, domain } = linkedInFields(data);
-  return { jobTitle, companyName, domain, source: "linkedin" };
+  const { jobTitle, companyName, domain, jobLocation } = linkedInFields(data);
+  return { jobTitle, companyName, domain, jobLocation, source: "linkedin" };
 }
 
 /* ── Generic branch (Serper render → JSON-LD or LLM) ─────────────────── */
@@ -122,6 +126,27 @@ interface JobPostingLD {
   title?: string;
   hiringOrganization?: { name?: string; sameAs?: string; url?: string } | string;
   url?: string;
+  jobLocation?: {
+    "@type"?: string;
+    address?: {
+      addressLocality?: string;
+      addressRegion?: string;
+      addressCountry?: string;
+    };
+  } | string;
+}
+
+function extractJsonLdLocation(loc: JobPostingLD["jobLocation"]): string | null {
+  if (typeof loc === "string" && loc.trim()) return loc.trim();
+  if (typeof loc === "object" && loc !== null) {
+    const addr = loc.address;
+    if (addr) {
+      const parts = [addr.addressLocality, addr.addressRegion, addr.addressCountry]
+        .filter((p): p is string => typeof p === "string" && Boolean(p.trim()));
+      if (parts.length) return parts.join(", ");
+    }
+  }
+  return null;
 }
 
 // Find a schema.org JobPosting anywhere in the JSON-LD (object, array, @graph).
@@ -154,11 +179,12 @@ function fromJsonLd(ld: JobPostingLD, pageUrl: string): ResolvedJob | null {
   if (!companyName) return null;
   const orgUrl = typeof org === "object" ? org?.url ?? org?.sameAs : undefined;
   const domain = pickDomain(orgUrl, pageUrl);
-  return { jobTitle, companyName: normalizeCompany(companyName), domain, source: "jsonld" };
+  const jobLocation = extractJsonLdLocation(ld.jobLocation);
+  return { jobTitle, companyName: normalizeCompany(companyName), domain, jobLocation, source: "jsonld" };
 }
 
 interface ExtractResponse {
-  json?: { job_title?: string | null; company_name?: string | null; company_domain?: string | null };
+  json?: { job_title?: string | null; company_name?: string | null; company_domain?: string | null; job_location?: string | null };
 }
 
 // Junk sentinels the extractor returns when a page had no usable content.
@@ -174,13 +200,14 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
     body: {
       markdown,
       prompt:
-        "Extract the job posting's title, the hiring company's name, and the company's primary website domain. If this is a company careers listing rather than a single job, set job_title to null but still return the company.",
+        "Extract the job posting's title, the hiring company's name, the company's primary website domain, and the job location (city, state, and/or country). If this is a company careers listing rather than a single job, set job_title to null but still return the company.",
       schema: {
         type: "object",
         properties: {
           job_title: { type: ["string", "null"] },
           company_name: { type: ["string", "null"] },
           company_domain: { type: ["string", "null"] },
+          job_location: { type: ["string", "null"] },
         },
       },
     },
@@ -193,6 +220,7 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
     jobTitle: clean(j?.job_title),
     companyName: normalizeCompany(companyName),
     domain,
+    jobLocation: clean(j?.job_location),
     source: "llm",
   };
 }
@@ -220,7 +248,7 @@ async function resolveGeneric(url: string): Promise<ResolvedJob> {
   }
 
   // Nothing usable — signal an empty resolution (caller turns this into 422).
-  return { jobTitle: null, companyName: "", domain: null, source: "llm" };
+  return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm" };
 }
 
 /** Resolve any job/careers URL → { jobTitle, companyName, domain }. Throws on
@@ -232,7 +260,7 @@ export function resolveJob(rawUrl: string): Promise<ResolvedJob> {
     if (canonical) return resolveLinkedIn(canonical);
     // A LinkedIn URL that isn't a job posting (profile, /company, feed) — the
     // generic scraper would just hit the auth wall, so don't spend on it.
-    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, source: "linkedin" });
+    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin" });
   }
   return resolveGeneric(rawUrl);
 }
