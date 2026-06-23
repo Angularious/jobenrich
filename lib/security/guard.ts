@@ -15,6 +15,12 @@ const MIN_FORM_MS = 1500;
 
 export const STEPS = {
   search: { cost: 0.12, requireTiming: true, noun: "searches" },
+  // Role-first job search (Fantastic Jobs /v1/active-ats). Confirmed live at
+  // $0.40/call — the single most expensive step, so it counts heavily against
+  // the same global daily cap. No form-timing gate: the search form is
+  // re-submitted as filters change, and a min-timing check would block rapid
+  // re-searches; origin/token/honeypot/cap/rate-limit still apply.
+  jobsSearch: { cost: 0.4, requireTiming: false, noun: "job searches" },
   alumni: { cost: 0.08, requireTiming: true, noun: "alumni lookups" },
   enrich: { cost: 0.1, requireTiming: false, noun: "contact lookups" },
 } as const;

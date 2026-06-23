@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { isValidJobUrl } from "@/lib/validation";
-import { resolveJob } from "@/lib/jobResolver";
+import { resolveJob, normalizeCompany } from "@/lib/jobResolver";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 import { findSimilarPeople, findRecruiters, simplifyJobTitle } from "@/lib/people";
 
 const MAX_URL_LEN = 2000;
+const MAX_FIELD_LEN = 200;
 
 // Shown when a URL can't be read into a company — usually an application
 // portal (ADP, iCIMS, Taleo…) that blocks automated reading. Point the user
@@ -16,8 +17,20 @@ const UNREADABLE_MSG =
 // calls; give it headroom (Hobby+Fluid allows up to 300s).
 export const maxDuration = 60;
 
+// Optional structured fields let a caller that ALREADY knows the company
+// (e.g. the v2 job-search page, where Fantastic Jobs returned company + domain
+// + title + location) skip the resolveJob scrape/LLM step entirely. v1's
+// URL-only path is unchanged: when companyName is absent we resolve the URL.
+interface SearchBody extends GuardBody {
+  jobUrl?: string;
+  companyName?: string;
+  companyDomain?: string;
+  jobTitle?: string;
+  jobLocation?: string;
+}
+
 export async function POST(request: Request) {
-  let body: GuardBody & { jobUrl?: string };
+  let body: SearchBody;
   try {
     body = await request.json();
   } catch {
@@ -27,38 +40,64 @@ export async function POST(request: Request) {
   const guard = await guardRequest(request, body, "search");
   if (!guard.ok) return guard.response;
 
-  const rawUrl = typeof body.jobUrl === "string" ? body.jobUrl.trim() : "";
-  if (!rawUrl || rawUrl.length > MAX_URL_LEN || !isValidJobUrl(rawUrl)) {
-    return NextResponse.json(
-      { error: "Paste a link to a job posting or company careers page." },
-      { status: 400 }
-    );
-  }
+  // Pre-resolved path: trust the structured company data, skip resolveJob.
+  const presetCompany =
+    typeof body.companyName === "string" ? body.companyName.trim().slice(0, MAX_FIELD_LEN) : "";
 
-  // Input is valid and a call will be made — count it against the daily cap.
-  await guard.recordSpend();
+  let jobTitle: string | null;
+  let companyName: string;
+  let domain: string | null;
+  let jobLocation: string | null;
+  let source: string;
 
-  // Step 1: Resolve the URL → { jobTitle, companyName, domain } (any source).
-  let resolved;
-  try {
-    resolved = await resolveJob(rawUrl);
-  } catch (err) {
-    console.error("[search] Job resolution failed:", err);
-    return NextResponse.json(
-      { error: UNREADABLE_MSG },
-      { status: 502 }
-    );
-  }
+  if (presetCompany) {
+    companyName = normalizeCompany(presetCompany);
+    domain =
+      typeof body.companyDomain === "string" && body.companyDomain.trim()
+        ? body.companyDomain.trim().slice(0, MAX_FIELD_LEN)
+        : null;
+    jobTitle =
+      typeof body.jobTitle === "string" && body.jobTitle.trim()
+        ? body.jobTitle.trim().slice(0, MAX_FIELD_LEN)
+        : null;
+    jobLocation =
+      typeof body.jobLocation === "string" && body.jobLocation.trim()
+        ? body.jobLocation.trim().slice(0, MAX_FIELD_LEN)
+        : null;
+    source = "preset";
+    // A people-only search will run — count it against the daily cap.
+    await guard.recordSpend();
+  } else {
+    const rawUrl = typeof body.jobUrl === "string" ? body.jobUrl.trim() : "";
+    if (!rawUrl || rawUrl.length > MAX_URL_LEN || !isValidJobUrl(rawUrl)) {
+      return NextResponse.json(
+        { error: "Paste a link to a job posting or company careers page." },
+        { status: 400 }
+      );
+    }
 
-  const { jobTitle, companyName, domain, jobLocation } = resolved;
-  if (!companyName) {
-    return NextResponse.json({ error: UNREADABLE_MSG }, { status: 422 });
+    // Input is valid and a call will be made — count it against the daily cap.
+    await guard.recordSpend();
+
+    // Step 1: Resolve the URL → { jobTitle, companyName, domain } (any source).
+    let resolved;
+    try {
+      resolved = await resolveJob(rawUrl);
+    } catch (err) {
+      console.error("[search] Job resolution failed:", err);
+      return NextResponse.json({ error: UNREADABLE_MSG }, { status: 502 });
+    }
+
+    ({ jobTitle, companyName, domain, jobLocation, source } = resolved);
+    if (!companyName) {
+      return NextResponse.json({ error: UNREADABLE_MSG }, { status: 422 });
+    }
   }
 
   // jobTitle may be null (e.g. a careers index) → company-only people search.
   const searchTitle = jobTitle ? simplifyJobTitle(jobTitle) : null;
   console.log(
-    `[search] (${resolved.source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"}, location: ${jobLocation ?? "—"})`
+    `[search] (${source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"}, location: ${jobLocation ?? "—"})`
   );
 
   // Step 2: Two waterfalls in parallel — people in similar roles + recruiters.

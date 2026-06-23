@@ -120,15 +120,24 @@ export default function Home() {
               Job Enrich
             </span>
           </div>
-          {/* Simple linked text credit on all sizes (no animated badge). */}
-          <a
-            href="https://orthogonal.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-none font-mono text-[10px] sm:text-[11px] text-dim uppercase tracking-widest whitespace-nowrap hover:text-acc-red"
-          >
-            powered by orthogonal
-          </a>
+          <div className="flex-none flex items-center gap-3 sm:gap-4">
+            {/* Cross-link to the v2 role-first search. */}
+            <a
+              href="/jobs"
+              className="font-mono font-bold text-[10px] sm:text-[11px] text-ink uppercase tracking-widest whitespace-nowrap underline hover:text-acc-red"
+            >
+              Search by role →
+            </a>
+            {/* Simple linked text credit on all sizes (no animated badge). */}
+            <a
+              href="https://orthogonal.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-[10px] sm:text-[11px] text-dim uppercase tracking-widest whitespace-nowrap hover:text-acc-red"
+            >
+              powered by orthogonal
+            </a>
+          </div>
         </div>
 
         {/* Marquee stripe — two identical tracks for a seamless −50% loop. */}
