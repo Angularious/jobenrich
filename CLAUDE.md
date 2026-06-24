@@ -2,7 +2,7 @@
 
 # Job Enrich
 
-A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind any job posting** — LinkedIn, Indeed, Greenhouse, Lever, Workday, BambooHR, Gem, or a company careers page. A student/job-seeker pastes a job URL and gets people at that company worth reaching out to, plus recruiters hiring for it. They can then optionally enter their school to surface alumni, and pull contact info for any person on demand. **Powered by Orthogonal.**
+A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind any job posting** — LinkedIn, Indeed, Greenhouse, Lever, Workday, BambooHR, Gem, or a company careers page. A student/job-seeker pastes a job URL and gets people at that company worth reaching out to, plus recruiters hiring for it. They can then optionally enter their school to surface alumni, pull contact info on demand, and research individual LinkedIn profiles. **Powered by Orthogonal.**
 
 ## Stack
 
@@ -20,71 +20,92 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 
 > **⚠ Shared Supabase project:** this project's Supabase instance is **shared with other demo sites**. That's why every object here is `jobenrich_`-prefixed — our tables/functions are isolated from the other demos (separate cap + rate-limit state). **Do not** rename/drop the `jobenrich_*` objects expecting them to be the only thing in the project, and **never** touch un-prefixed or other apps' objects. Note the **free-tier quotas are shared** across all demos on the project (DB size, the 7-day inactivity pause, connection pool) — so keep usage light and prefer the REST transport (already used) over raw connections.
 
-> **⚠ Status: `.env.local` still holds a placeholder `ORTHOGONAL_API_KEY` (`orth_live_xxxxx`)** and `REQUEST_TOKEN_SECRET` must be set before deploy. The app **cannot reach Orthogonal** until a real key is dropped in. The waterfall pipeline was validated out-of-band through the Orthogonal MCP tools (job extract, ContactOut search, and the Apollo/Bytemine/ContactOut enrich steps each confirmed to return live data). One branch remains unverified end-to-end: the **Coresignal fallback** (fires only when ContactOut returns zero). See `.env.example`.
-
 ## Architecture / data flow
 
 **This is a public demo — no login.** Access is controlled by Level 1 abuse protections (audit-driven), all in `lib/security/`:
-- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Returns `recordSpend()` to call after the upstream work.
-- `rateLimit.ts` / `spendCap.ts` — **Supabase-backed when configured, in-memory otherwise.** Both check `getSupabase()` (`supabase.ts`): if `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are set, the `$40` cap and the per-visitor `10/step/day` limit go through atomic Postgres RPCs (`jobenrich_record_spend`, `jobenrich_check_rate_limit` in `supabase/migrations/0001_*.sql`) so they hold across **all** serverless instances; unset → module-level Map/counter (per-instance, leaks to `$40 × live instances`, zeroed on redeploy — fine for a low-traffic demo). **On any Supabase error both fail *degraded* to the in-memory path**, so a paused/unreachable DB never takes the site down — worst case the cap reverts to its old soft behavior. `guardRequest` is therefore `async`; routes `await` it and `await guard.recordSpend()`.
-- `tokens.ts` + `app/api/init/route.ts` — issue/verify the signed request token (CSRF) and page-load stamp (timing); the client fetches them on mount.
-- `client.ts` — client helper: builds the composite fingerprint (IP + localStorage session token + UA/screen/tz/lang/platform), primes the token, and `apiPost()`s with all signals. `errorMessage()` renders 429/503 messages.
+- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Returns `recordSpend()` to call after the upstream work. Steps: `search`, `alumni`, `enrich`, `profile`, `phone` (each 10/day per visitor).
+- `rateLimit.ts` / `spendCap.ts` — Supabase-backed when configured, in-memory otherwise. Both fail *degraded* to in-memory on any Supabase error. `guardRequest` is async; routes `await` it and `await guard.recordSpend()`.
+- `tokens.ts` + `app/api/init/route.ts` — issue/verify the signed request token (CSRF) and page-load stamp (timing).
+- `client.ts` — composite fingerprint builder + `apiPost()` + `errorMessage()`.
 - Limits: **10 / step / day** per visitor, 24h reset; cap **$40/day**.
 
-**Everything runs on a waterfall model** (ported from a sister demo): within each finder, a step only fires if the previous step returned **zero** people. Cheap/broad sources are tried first, and a fallback only costs money when it's actually needed. All finders live in `lib/people.ts` and return a normalized `Person` ({ name, title, linkedinUrl, profilePictureUrl, source }).
+**Search flow** (`app/page.tsx` → `app/api/search/route.ts`):
+1. **`resolveJob(rawUrl)`** (`lib/jobResolver.ts`) → `{ jobTitle, companyName, domain, jobLocation }`:
+   - LinkedIn → `canonicalizeLinkedInJobUrl` (handles both `/jobs/view/{id}` and slug URLs `/jobs/view/title-at-company-{id}/`) → Edges `linkedin-extract-job` ($0.09).
+   - Everything else → Serper Scrape ($0.02, renders JS) → (a) JSON-LD `JobPosting` free parse, (b) OG/page title heuristic free ("Title at Company" pattern), (c) ScrapeGraphAI LLM extract ($0.025).
+2. Two waterfalls in parallel. The ContactOut `/v1/people/search` response (`reveal_info:false`, $0.05) returns rich data beyond just profile stubs — `experience[]`, `education[]`, `summary`, `contact_availability{work_email, personal_email, phone}`, and `company{logo_url, size, overview, headquarter, founded_at, revenue}`. All of this is captured in `Person.searchProfile` and `CompanyMeta` at no extra cost.
+   - **People (target 5):** domain-first → ContactOut (domain+title+location → domain+title → domain+location → domain) → company-name fallback → Coresignal.
+   - **Recruiters (target 3):** domain-first with location filter at each step → company-name fallback → Coresignal.
+3. Response includes `companyMeta` (from the first ContactOut result's company object) alongside people/recruiters.
 
-**Search flow** (`app/page.tsx` → `app/api/search/route.ts`) — input is **any job/careers URL** (LinkedIn, Indeed, Greenhouse, Lever, Workday, BambooHR, Gem, a company careers page, …), gated only by `isValidJobUrl` (http(s) + host):
-1. **`resolveJob(rawUrl)`** (`lib/jobResolver.ts`) turns any URL into `{ jobTitle, companyName, domain, jobLocation }` via a source waterfall — cheap/structured first, LLM only when needed:
-   - **LinkedIn** (`isLinkedInHost`) → `canonicalizeLinkedInJobUrl` → Edges `linkedin-extract-job` ($0.09; LinkedIn is auth-walled so the purpose-built extractor wins).
-   - **Everything else** → **Serper Scrape ($0.02)** which *renders JS* (so it works on SPAs like Workday/BambooHR/Gem that return an empty shell to a plain fetch) → (a) parse a schema.org `JobPosting` **JSON-LD** if present (free, most reliable), else (b) LLM-extract from the rendered markdown via **ScrapeGraphAI `/api/extract` ($0.025)**.
-   - `normalizeCompany()` strips legal suffixes ("Crocs, Inc." → "Crocs") so the people providers match; `ATS_HOSTS` guard prevents using `bamboohr.com`/`myworkdayjobs.com`/etc. as the company's own domain. `jobTitle` may be **null** (a careers index with no single job) → the people search runs **company-only**. `jobLocation` is extracted from all three paths (LinkedIn payload fields, JSON-LD `jobLocation.address`, LLM schema) and passed to the recruiter finder to avoid surfacing international recruiters for a US role. Throws on hard upstream failure (502); empty company → 422.
-2. `simplifyJobTitle()` strips intern/seasonal decorations from the resolved title so ContactOut can match.
-3. Run two waterfalls in parallel (`Promise.allSettled`), each with its own error flag. **A resolved `domain` is an unambiguous company match; the `company` name is not** (e.g. "Orthogonal" → the YC W26 company *and* the unrelated orthogonal.io). So the finders are **domain-first**: when a domain exists they try it FIRST, then fall back to the company name **only if the domain found nobody**. The same-namesake risk only applies when the domain returns the *wrong* people — when it returns *none* (e.g. a slightly-off domain a provider doesn't index), a name match beats an empty result. The domain is PSL-reduced to its apex (`careers.sharkninja.com` → `sharkninja.com`) in `lib/jobResolver.ts` so it's a domain the people providers actually index — getting this wrong was the cause of "domain resolved but 0 people surfaced".
-   - **People (target 5):** *domain present* → ContactOut `people/search` (domain + title) → (domain only) → then the name fallback below. *No domain (or domain found nobody)* → ContactOut (company + title) → (company only) → Coresignal `employee_base/search/filter/preview` (company).
-   - **Recruiters (target 3):** Each ContactOut step is tried **with the job's location filter first** (e.g. "Boston, MA, United States") — if that returns nobody the waterfall falls through to the same step without the filter, so a too-specific location never blocks results entirely. Virtual locations ("Remote", "Worldwide", etc.) are skipped. *domain present* → ContactOut (domain + 13 recruiter titles [+ location]) → (domain + titles, no location) → then the name fallback below. *No domain (or domain found nobody)* → ContactOut (company + recruiter titles [+ location]) → (company + titles, no location) → Coresignal (company + title "Recruiter") → Coresignal (company only — founders hire directly).
+**ContactOut search response carries free intelligence** — captured in `Person.searchProfile` on every result at no extra cost:
+- `contactAvailability: { email: boolean; phone: boolean }` — whether ContactOut has contact data for this person. Used to: (a) show `✓ email` / `✓ phone` badges on PersonCard, (b) skip the $0.33 ContactOut enrich step when `email=false` via `contactHint` passed to `/api/enrich`, (c) decide whether to show "Get phone →" vs "No phone found." in EnrichDrawer.
+- `experience[]` / `education[]` / `bio` — powers "Pull Profile" for ContactOut results at zero additional cost (strings like "Title at Company in YYYY - Present", parsed client-side).
+- `companyMeta` (logo, employees, HQ, overview, founded, revenue) — shown in the hiring banner dropdown.
 
-**Alumni flow** (`components/AlumniFinder.tsx` → `app/api/alumni/route.ts`) — opt-in secondary action; the school is **not** asked for up front. Takes company + domain (from the search response) + school. Same domain-first rule: *domain present* → ContactOut (domain + education) → then the company-name fallback if that found nobody; *no domain* → ContactOut (company + education).
+**Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front.
 
-**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — cheap→rich→last-resort contact waterfall, each step firing only if no email yet: **Apollo `/api/v1/people/match` ($0.01)** for a verified email + profile, straight from the LinkedIn URL → **Bytemine `/contacts/enrich` ($0.03)** for work+personal email **and** mobile+work phone → **ContactOut `/v1/people/linkedin` ($0.33, `include_phone:false`)** as the last resort. Returns `{ emails, phones, source, company, position, location, links }`, where `source: "apollo" | "bytemine" | "contactout" | "none"`. Each step is independently `try/catch`'d — a provider error degrades to the next instead of failing the request — and profile context, phones, and links **accumulate** across steps, so an email found late still carries context an earlier step surfaced. **Phones come from Bytemine (mobile+work) and ContactOut, not Apollo** — Apollo's phone reveal is intentionally not requested so it stays a flat $0.01; ContactOut's phone tier ($0.55) is likewise unused (`include_phone` stays false). Apollo's raw payload is ~190 KB, so the route extracts only the fields it needs via `apolloLookup` and **never logs the whole body**; `isRealEmail()` drops Apollo's `email_not_unlocked@domain.com` placeholder. Provider response shapes are inconsistent, so the route coerces defensively (`collectStrings`, `cleanStr`, `asUrl`, `joinLocation`) — preserve that. The UI never names the providers (no "Apollo/Bytemine/ContactOut" in progress or results). Results are cached client-side per LinkedIn URL in `page.tsx` (`enrichCache`): the first "Get contact" fetches; afterward the button reads "Open contact" and reopening the drawer is instant and free.
+**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`):
+- Cheap→rich→last-resort email waterfall: **Apollo `/api/v1/people/match` ($0.01)** → **Bytemine `/contacts/enrich` ($0.03)** → **ContactOut `/v1/people/linkedin` ($0.33, `include_phone:false`)**.
+- Apollo's `email_status` is checked — `invalid`/`do_not_email`/`bounced`/`spam` primaries are dropped and the waterfall continues to Bytemine.
+- ContactOut step is **skipped entirely** when `contactHint.email=false` (already confirmed no data).
+- Phones come from Bytemine (fires when Apollo has no email) or the separate phone route. If Apollo finds email first, phones are NOT automatically fetched — see Phone flow below.
 
-**Coresignal caveat:** `experience_company_name` matches anyone who *ever* worked there, so `fromCoresignal()` filters results to rows whose *current* `company_name` matches the target (falling back to the raw list only if none match). Coresignal returns `profile_url` (a real LinkedIn URL), so its results are still enrichable.
+**Phone flow** (`EnrichDrawer` "Get phone →" → `app/api/phone/route.ts`) — explicit user action, only shown when `contactAvailability.phone=true`:
+- Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback).
+- Result merged into existing `EnrichData.phones` in the cache — no re-fetch needed.
+- Shows "No phone found." (static) when `contactAvailability.phone=false` or unknown.
 
-## Costs (best case = first step hits, the common path; all unit prices verified live against the Orthogonal marketplace)
+**Pull Profile flow** (`PersonCard` "Pull Profile →" → `ProfileDrawer`):
+- **ContactOut results (~95%)**: uses `person.searchProfile` data already fetched in the $0.05 search — experience/education/bio strings parsed client-side. Zero extra cost. Instant, no loading state.
+- **Coresignal results (~5%)**: falls back to `/api/profile` → Apollo `people/match` ($0.01, no email/phone reveal) for structured career/education/skills data.
 
-- **Resolve (varies by source):** LinkedIn = **$0.09** (Edges); everything else = **$0.02** (Serper, JSON-LD hit) → **$0.045** (Serper + ScrapeGraphAI LLM fallback). Non-LinkedIn is *cheaper* than LinkedIn.
-- **People + Recruiters** (each ContactOut step $0.05, Coresignal $0.021; run in parallel; best $0.05 when the first step hits): *no domain* → People ≤ $0.121 (company+title → company → Coresignal), Recruiters ≤ $0.142 (company+titles+location → company+titles → Coresignal recruiter → Coresignal all). *domain present* → domain steps run first, name fallback only if nobody found: People ≤ $0.221, Recruiters ≤ $0.242 worst case (location-filtered step + unfiltered step at each level). The location-filtered step is an extra $0.05 only when it returns nobody; the common path (location-filtered first step hits) is still $0.05.
-- **Search total:** LinkedIn **$0.19** best / ~$0.45 worst; careers/Greenhouse **~$0.12** best / ~$0.41 worst (worst = resolve + both finders exhausting their domain *and* name fallbacks; only when nobody is found at any step).
-- **Alumni:** $0.05 (→ $0.10 worst case with the domain fallback).
-- **Profile research (per person):** $0.01 (Apollo, no email/phone reveal). Cached client-side per LinkedIn URL in `profileCache` — free to reopen.
-- **Enrich (per contact):** $0.01 (Apollo hit) → $0.04 (Apollo miss + Bytemine) → $0.37 worst case (both miss + ContactOut $0.33). Cached client-side, so paid once per profile.
-- **Enrich all returned (≤5 people + ≤3 recruiters = 8):** ~$0.08 best (all Apollo) → ~$0.32 mid → ~$2.96 worst (all ContactOut).
-- **Full session (paste + enrich everyone):** ~$0.20–0.27 typical → ~$3.2 absolute worst. The $40/day cap covers ~130–200 typical sessions/day (soft, in-memory).
+**Coresignal caveat:** `experience_company_name` matches anyone who *ever* worked there — `fromCoresignal()` filters to current company matches first, falls back to full list only if none match. Coresignal's `profile_url` is a real LinkedIn URL, so results are enrichable.
 
-> Dynamic-priced endpoints: ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` and `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33`; ScrapeGraphAI `/api/extract` adds +$0.025 with `stealth`. The app pins these to the cheap side.
+**Why not Edges `linkedin-extract-people` for Pull Profile?** Edges can extract individual LinkedIn profiles at $0.09, but it's 9× Apollo's $0.01 for marginal data quality gain. More importantly, Edges is NOT a search API — it only extracts individual profiles given a URL. Coresignal is used as a people-finder fallback because it has actual search filters (company + title). These are different tools for different jobs; the "Coresignal vs Edges" framing was a false choice.
 
-## Scaling / deployment (audited 2026-06-16)
+**Why not Tomba email-finder?** Confirmed unreliable — guesses email patterns from name+domain (e.g. `{first_initial}{last_initial}@company.com`) rather than pulling real data. Tested with Araz Bilehjani at klaviyo.com: returned `ab@klaviyo.com` attributed to a different person (Arun Bharadwaj). `accept_all` domains (common for large companies) make pattern-guessed emails unverifiable. Skip.
 
-Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan**, with a **Supabase free** project for the cap/rate-limiter. `REQUEST_TOKEN_SECRET` and a working `ORTHOGONAL_API_KEY` (`orth_live_…`) are confirmed set in Vercel prod. Verdict: **fine for ~100 users**; for a public scale launch see the Hobby ToS note below.
+## Costs (verified live; best case = common path)
 
-- **~100 users: nothing breaks.** Spend ≈ $20–30 total (under the cap). Gates 1–6 (origin/token/honeypot/timing/bot) are airtight regardless of instance count.
-- **Global hard cap — implemented (Level 2).** `spendCap.ts`/`rateLimit.ts` use Supabase via `@supabase/supabase-js` REST (atomic `jobenrich_record_spend` / `jobenrich_check_rate_limit` RPCs on `jobenrich_`-prefixed tables, so one Supabase project can be shared across demos without colliding) when `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are set, so the `$40` cap and `10/step/day` limit hold across all instances; otherwise they use the in-memory counters. **Both fail *degraded* to in-memory on any Supabase error** (so a paused/unreachable DB never 500s the site). Supabase free pauses after 7 days idle (~30s resume) — an active demo won't pause; add a keep-alive cron if it ever goes quiet. **Setup:** run `supabase/migrations/0001_spend_and_rate_limit.sql` in the Supabase SQL editor, then set the two env vars in Vercel.
-- **Vercel Hobby is non-commercial-only** ([ToS](https://vercel.com/legal/terms)). A public, Orthogonal-branded demo built by an Orthogonal employee is commercial; Vercel may shut it down without notice, and Hobby pauses (no overage billing) if a spike exceeds included usage. **A public scale launch needs Vercel Pro ($20/mo).** (Hobby+Fluid-compute allows `maxDuration` up to 300s, so the `maxDuration = 60` on `search`/`alumni` is fine.)
-- **Caching is intentionally per-user/session only.** `enrichCache` (client-side per browser) makes a re-opened contact free *for that user*; there is deliberately **no cross-user cache** — a scrape/search/enrich is **never** saved and re-served to a different visitor (privacy + product decision). This means overlapping searches across users each pay full price; that's accepted. `$40/day` therefore covers ~130–200 full sessions/day.
+- **Resolve:** LinkedIn $0.09 · everything else $0.02 (JSON-LD) → $0.02 (OG heuristic, free step) → $0.045 (LLM fallback)
+- **People + Recruiters:** $0.05 best (first ContactOut step hits) · domain waterfall ≤ $0.242 worst per finder
+- **Search total:** LinkedIn ~$0.19 best / ~$0.45 worst · Greenhouse/careers ~$0.12 best / ~$0.41 worst
+- **Alumni:** $0.05 → $0.10 worst (domain fallback)
+- **Pull Profile:** $0 for ContactOut results (already in search data) · $0.01 Apollo for Coresignal results
+- **Enrich (email):** $0.01 Apollo → $0.04 Bytemine fallback → $0.37 worst (ContactOut)
+- **Phone (explicit):** $0.03 Bytemine → $0.58 worst (Bytemine miss + ContactOut $0.55)
+- **Enrich all 8 returned:** ~$0.08 best (all Apollo) → ~$2.96 worst (all ContactOut)
+- **Full session:** ~$0.20–0.27 typical · ~$3.2 absolute worst
+
+> ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` — always pass `reveal_info: false`. `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33` — enrich route uses `false`; phone route uses `true`. ScrapeGraphAI stealth adds +$0.025.
+
+## Scaling / deployment
+
+Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan**, Supabase free. Fine for ~100 users. Public scale launch needs Vercel Pro ($20/mo) — Hobby is non-commercial-only.
 
 ## Key files
 
-- `lib/orthogonal.ts` — the single `callOrthogonal()` wrapper. **All external API calls go through this.** Hits `api.orthogonal.com/v1/run` with `{ api, path, method, body?, query? }`, throws on `!res.ok` or `!json.success`, returns `json.data` (the provider's raw response body). Exports `QuotaExceededError` — thrown when a 402 or quota-signal error is received; routes catch this and return 503 with "Usage limit reached — try again later."
-- `lib/people.ts` — `Person` type, normalizers, the three waterfall finders, `simplifyJobTitle`, `extractDomain`. **Add new people sources here**, behind the `waterfall()` runner.
-- `lib/jobResolver.ts` — `resolveJob(url)` (the multi-source URL → `{ jobTitle, companyName, domain, jobLocation }` waterfall), `normalizeCompany()`, JSON-LD parsing, the Serper-render + ScrapeGraphAI-LLM generic path, the `ATS_HOSTS` domain guard, and `hostFromUrl` which **PSL-reduces any host to its registrable apex via `tldts`** (`careers.x.com`/`jobs.x.co.uk` → `x.com`/`x.co.uk`) — don't hand-roll subdomain stripping, let `tldts` do it. **Add new job-source handling here.**
-- `lib/validation.ts` — `canonicalizeLinkedInJobUrl`, `isLinkedInHost`, `isValidJobUrl` (any http(s) URL), `isValidLinkedInProfileUrl`, `isValidSchool`.
-- `app/api/profile/route.ts` — per-person LinkedIn profile research: calls Apollo `/api/v1/people/match` ($0.01, no email/phone reveal) and returns `ProfileData` (bio/headline, top-4 career history, education, top-10 skills, links). Rate-limited under step `"profile"` (10/day per visitor). Cached client-side per LinkedIn URL in `profileCache`.
-- `components/` — `SearchForm` (any-source URL input + rotating placeholder + source chips), `SampleResults` (landing "a peek" preview — real Orthogonal team, click reveals static email + LinkedIn), `ResultsSection`, `PersonCard` ("Get contact" + "Research →" actions), `AlumniFinder`, `EnrichDrawer` (contact info: emails/phones), `ProfileDrawer` (per-person LinkedIn profile research: bio, career, education, skills — opens from "Research →" on each PersonCard, cached in `profileCache`), `BuilderDrawer` ("How this was built" Orthogonal marketing panel: shows live API calls + unit costs), `SessionTabs` (closeable tab bar for comparing multiple job searches, persisted in sessionStorage), `PipelineProgress` (cosmetic timed steps — not tied to real backend events), `PasswordGate`.
-
-## Future work / known gaps
+- `lib/orthogonal.ts` — single `callOrthogonal()` wrapper + `QuotaExceededError` (thrown on 402/quota signal; routes return 503).
+- `lib/people.ts` — `Person` + `SearchProfile` + `CompanyMeta` types; `fromContactOut()` captures the full search response (experience, education, bio, contact_availability, company meta) at no extra cost; three waterfall finders; `waterfall()` returns `StepResult { people, companyMeta }`.
+- `lib/jobResolver.ts` — three-step generic resolver: JSON-LD → OG title heuristic → LLM. LinkedIn slug URL fix: regex extracts last `≥7`-digit sequence from `/jobs/view/...` path. `ATS_HOSTS` guard. `hostFromUrl()` via `tldts`.
+- `lib/validation.ts` — `canonicalizeLinkedInJobUrl` (handles both bare ID and slug URLs), `isValidLinkedInProfileUrl`, `isValidJobUrl`, `isValidSchool`.
+- `lib/security/guard.ts` — steps: `search`, `alumni`, `enrich`, `profile`, `phone`.
+- `app/api/search/route.ts` — resolves job → runs two waterfalls → returns `{ companyMeta, people, recruiters, ... }`.
+- `app/api/enrich/route.ts` — email waterfall (Apollo→Bytemine→ContactOut); skips ContactOut when `contactHint.email=false`; filters Apollo invalid email_status.
+- `app/api/phone/route.ts` — explicit phone reveal: Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback).
+- `app/api/profile/route.ts` — Apollo `people/match` ($0.01) for Coresignal results only; ContactOut results use free `searchProfile` data client-side.
+- `components/PersonCard.tsx` — `SearchProfile` + `PersonData` types; `✓ email`/`✓ phone` availability badges in info column; responsive button labels (`sm:` prefix for full text).
+- `components/EnrichDrawer.tsx` — split ■ Email / ■ Phone sections; "Get phone →" button when `contactAvailability.phone=true`; "No phone found." otherwise; `onGetPhone` + `phoneLoading` props.
+- `components/ProfileDrawer.tsx` — LinkedIn profile research: bio, career, education, skills, links.
+- `components/BuilderDrawer.tsx` — "How this was built" Orthogonal marketing panel (API calls + unit costs).
+- `components/SessionTabs.tsx` — closeable multi-search tab bar, persisted in sessionStorage.
+- `components/ResultsSection.tsx`, `AlumniFinder.tsx` — thread `onProfile`/`profiledUrls` alongside `onEnrich`/`enrichedUrls`.
 
 ## Conventions
 
-- Validate input and return `NextResponse.json({ error }, { status })` on bad requests; use 502 for upstream Orthogonal failures.
-- **Error text surfacing:** routes put user-facing text in `error`; the security guard puts it in `message`. The client's `errorMessage()` (`lib/security/client.ts`) reads **both** — keep it that way, or route errors silently fall back to the generic UI message. A URL that resolves to no company (e.g. application portals like ADP/iCIMS/Taleo that block scraping) returns 422 with `UNREADABLE_MSG`, which tells the user to try a LinkedIn/Greenhouse/Workday/careers link instead.
-- API routes log with a `[search]` / `[alumni]` / `[enrich]` / `[profile]` / `[people]` prefix.
-- New external data sources go through `callOrthogonal`, not raw `fetch`, and new people-finders go through `lib/people.ts`'s `waterfall()` so the fire-only-on-empty cost discipline is preserved.
+- Validate input → `NextResponse.json({ error }, { status })`; 502 for upstream failures; 422 for unreadable links; 503 for quota/cap.
+- **Error surfacing:** routes use `error`; guard uses `message`. `errorMessage()` in `client.ts` reads both.
+- API logs prefix: `[search]` / `[alumni]` / `[enrich]` / `[profile]` / `[phone]` / `[people]`.
+- New external sources → `callOrthogonal`. New people-finders → `lib/people.ts` `waterfall()`.
+- The UI never names providers. No "Apollo/Bytemine/ContactOut" in UI copy.
