@@ -37,7 +37,6 @@ function vanitySlug(url: string): string {
 
 export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enriched, profiled }: PersonCardProps) {
   const slug = vanitySlug(person.linkedinUrl);
-  const ca = person.searchProfile?.contactAvailability ?? null;
 
   return (
     <div
@@ -78,21 +77,6 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
           >
             /in/{slug}
           </a>
-        )}
-        {/* Contact availability — only shown when ContactOut confirms data exists */}
-        {ca && (ca.email || ca.phone) && (
-          <div className="flex gap-2 mt-1">
-            {ca.email && (
-              <span className="font-mono text-[10px] font-black text-acc-green uppercase tracking-wide">
-                ✓ email
-              </span>
-            )}
-            {ca.phone && (
-              <span className="font-mono text-[10px] font-black text-acc-green uppercase tracking-wide">
-                ✓ phone
-              </span>
-            )}
-          </div>
         )}
       </div>
 

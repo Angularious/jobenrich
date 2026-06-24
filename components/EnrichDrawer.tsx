@@ -75,9 +75,6 @@ export function EnrichDrawer({
   const hasProfile = Boolean(data?.company || data?.location || hasLinks);
   const nothing = !loading && !error && data && !hasContact && !hasProfile;
 
-  // ContactOut already told us if they have a phone in the search response.
-  const phoneAvailable = person?.searchProfile?.contactAvailability?.phone === true;
-
   return (
     <>
       {/* Backdrop */}
@@ -192,7 +189,9 @@ export function EnrichDrawer({
                           {phoneLoading ? "Finding phone…" : "Try again →"}
                         </button>
                       </div>
-                    ) : phoneAvailable && !phoneAttempted ? (
+                    ) : !phoneAttempted ? (
+                      // Always offer — Bytemine/ContactOut may have a phone even
+                      // when ContactOut's search-time signal didn't flag one.
                       <button
                         onClick={onGetPhone}
                         disabled={phoneLoading}
@@ -201,7 +200,7 @@ export function EnrichDrawer({
                         {phoneLoading ? "Finding phone…" : "Get phone →"}
                       </button>
                     ) : (
-                      // No phone signal, or we already looked and found none.
+                      // We looked (Bytemine → ContactOut) and found none.
                       <p className="font-mono text-[11px] text-dim">No phone found.</p>
                     )}
                   </>
