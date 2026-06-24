@@ -87,11 +87,9 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
         {onProfile && (
           <button
             onClick={() => onProfile(person)}
-            className={`font-mono text-[10px] font-bold uppercase tracking-wider whitespace-nowrap hover:text-ink ${
-              profiled ? "text-acc-blue" : "text-dim"
-            }`}
+            className={`nb-btn px-3 py-1.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap${profiled ? " nb-btn-primary" : ""}`}
           >
-            {profiled ? "✓ Research" : "Research →"}
+            {profiled ? "✓ Pulled" : "Pull Profile →"}
           </button>
         )}
       </div>

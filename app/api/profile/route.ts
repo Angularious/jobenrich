@@ -124,7 +124,7 @@ export async function POST(request: Request) {
       endYear: e.current ? null : parseYear(e.end_date),
       current: Boolean(e.current),
     }))
-    .filter((j) => j.company || j.title)
+    .filter((j) => j.title) // require at least a title; company may be blank (Apollo gap)
     .sort((a, b) => {
       if (a.current !== b.current) return a.current ? -1 : 1;
       return (b.startYear ?? 0) - (a.startYear ?? 0);

@@ -182,9 +182,11 @@ export function ProfileDrawer({ person, data, loading, error, onClose }: Profile
                                 <p className="font-black text-xs text-ink uppercase tracking-wide leading-snug">
                                   {j.title}
                                 </p>
-                                <p className="font-mono text-[11px] font-bold text-acc-blue mt-0.5">
-                                  {j.company}
-                                </p>
+                                {j.company && (
+                                  <p className="font-mono text-[11px] font-bold text-acc-blue mt-0.5">
+                                    {j.company}
+                                  </p>
+                                )}
                               </div>
                               <YearRange start={j.startYear} end={j.endYear} current={j.current} />
                             </div>
