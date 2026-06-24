@@ -12,15 +12,16 @@ import { verifyRequestToken, verifyPageStamp } from "./tokens";
    providers fired (enrich, phone) reconcile to the ACTUAL cost by passing
    it to `recordSpend(actual)` after the work; the rest record `cost`.   */
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const PER_STEP_DAILY_LIMIT = 10;
 const MIN_FORM_MS = 1500;
 
+// `limit` = per-visitor calls/day for this step. `cost` = WORST-CASE USD
+// reserved against the daily cap (routes reconcile to actual via recordSpend).
 export const STEPS = {
-  search: { cost: 0.12, requireTiming: true, noun: "searches" },
-  alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups" },
-  enrich: { cost: 0.59, requireTiming: false, noun: "contact lookups" }, // worst: Apollo .01 + Bytemine .03 + ContactOut incl. phone .55
-  profile: { cost: 0.01, requireTiming: false, noun: "profile lookups" },
-  phone: { cost: 0.58, requireTiming: false, noun: "phone lookups" },
+  search: { cost: 0.12, requireTiming: true, noun: "searches", limit: 10 },
+  alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups", limit: 10 },
+  enrich: { cost: 0.59, requireTiming: false, noun: "contact lookups", limit: 10 }, // worst: Apollo .01 + Bytemine .03 + ContactOut incl. phone .55
+  profile: { cost: 0.01, requireTiming: false, noun: "profile lookups", limit: 10 },
+  phone: { cost: 0.58, requireTiming: false, noun: "phone lookups", limit: 5 }, // expensive ($0.55 ContactOut tier) → tighter cap
 } as const;
 
 export type StepName = keyof typeof STEPS;
@@ -170,7 +171,7 @@ export async function guardRequest(
 
   // 6. Per-visitor, per-step daily rate limit.
   const key = `${step}:${compositeKey(request, body.fp)}`;
-  const rl = await checkRateLimit(key, PER_STEP_DAILY_LIMIT, WINDOW_MS);
+  const rl = await checkRateLimit(key, cfg.limit, WINDOW_MS);
   if (!rl.allowed) {
     return {
       ok: false,

@@ -23,18 +23,18 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 ## Architecture / data flow
 
 **This is a public demo — no login.** Access is controlled by Level 1 abuse protections (audit-driven), all in `lib/security/`:
-- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Steps: `search`, `alumni`, `enrich`, `profile`, `phone` (each 10/day per visitor). **Spend-cap accounting:** each step's `cost` is the **worst-case** dollar cost — that's what the cap *reserves* up front (gate 5 checks `current + worstCase ≤ cap`, so work is never *started* past the cap). Routes whose real cost varies by which providers fired (`enrich`: Apollo→Bytemine→ContactOut; `phone`: Bytemine→ContactOut) tally the **actual** spend and pass it to `recordSpend(actual)` after the work; lower-variance steps record the estimate via `recordSpend()`. This keeps the cap a true ceiling without tripping early on the common (cheap) path.
+- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Steps: `search`, `alumni`, `enrich`, `profile` (10/day per visitor each) and `phone` (**5/day** — it can hit the $0.55 ContactOut tier). Each step's `limit` lives in `STEPS`. **Spend-cap accounting:** each step's `cost` is the **worst-case** dollar cost — that's what the cap *reserves* up front (gate 5 checks `current + worstCase ≤ cap`, so work is never *started* past the cap). Routes whose real cost varies by which providers fired (`enrich`: Apollo→Bytemine→ContactOut; `phone`: Bytemine→ContactOut) tally the **actual** spend and pass it to `recordSpend(actual)` after the work; lower-variance steps record the estimate via `recordSpend()`. This keeps the cap a true ceiling without tripping early on the common (cheap) path.
 - `rateLimit.ts` / `spendCap.ts` — Supabase-backed when configured, in-memory otherwise. Both fail *degraded* to in-memory on any Supabase error. `guardRequest` is async; routes `await` it and `await guard.recordSpend()`.
 - `tokens.ts` + `app/api/init/route.ts` — issue/verify the signed request token (CSRF) and page-load stamp (timing).
 - `client.ts` — composite fingerprint builder + `apiPost()` + `errorMessage()`.
-- Limits: **10 / step / day** per visitor, 24h reset; cap **$40/day**.
+- Limits per visitor (24h reset): search / alumni / enrich / profile **10/day** each, phone **5/day**; global cap **$40/day**.
 
 **Search flow** (`app/page.tsx` → `app/api/search/route.ts`):
 1. **`resolveJob(rawUrl)`** (`lib/jobResolver.ts`) → `{ jobTitle, companyName, domain, jobLocation }`:
    - LinkedIn → `canonicalizeLinkedInJobUrl` (handles both `/jobs/view/{id}` and slug URLs `/jobs/view/title-at-company-{id}/`) → Edges `linkedin-extract-job` ($0.09).
    - Everything else → Serper Scrape ($0.02, renders JS) → (a) JSON-LD `JobPosting` free parse, (b) OG/page title heuristic free ("Title at Company" pattern), (c) ScrapeGraphAI LLM extract ($0.025).
 2. Two waterfalls in parallel. The ContactOut `/v1/people/search` response (`reveal_info:false`, $0.05) returns rich data beyond just profile stubs — `experience[]`, `education[]`, `summary`, `contact_availability{work_email, personal_email, phone}`, and `company{logo_url, size, overview, headquarter, founded_at, revenue}`. All of this is captured in `Person.searchProfile` and `CompanyMeta` at no extra cost.
-   - **People (target 5):** domain-first → ContactOut (domain+title+location → domain+title → domain+location → domain) → company-name fallback → Coresignal.
+   - **People (target 5):** tightened to ≤4 ContactOut calls — domain+title+location → domain+title → company+title → one role-agnostic fallback (domain if present, else company) → Coresignal. (Dropped the old role-agnostic-but-local and redundant steps that pushed it to 8 calls / $0.40.)
    - **Recruiters (target 3):** domain-first with location filter at each step → company-name fallback → Coresignal.
 3. Response includes `companyMeta` (from the first ContactOut result's company object) alongside people/recruiters.
 
@@ -70,7 +70,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 ## Costs (verified live; best case = common path)
 
 - **Resolve:** LinkedIn $0.09 · everything else $0.02 (JSON-LD) → $0.02 (OG heuristic, free step) → $0.045 (LLM fallback)
-- **People + Recruiters:** $0.05 best (first ContactOut step hits) · domain waterfall ≤ $0.242 worst per finder
+- **People + Recruiters:** $0.05 best (first ContactOut step hits) · People ≤ ~$0.20 worst (4 ContactOut steps, tightened) · Recruiters ≤ $0.242 worst
 - **Search total:** LinkedIn ~$0.19 best / ~$0.45 worst · Greenhouse/careers ~$0.12 best / ~$0.41 worst
 - **Alumni:** $0.05 → $0.10 worst (domain fallback)
 - **Pull Profile:** $0 for ContactOut results (already in search data) · $0.01 Apollo for Coresignal results

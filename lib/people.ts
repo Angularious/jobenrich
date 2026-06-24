@@ -247,20 +247,23 @@ export function findSimilarPeople(
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null }));
 
-  if (domain) {
-    if (titles.length) {
-      if (loc) steps.push(() => co({ domain: [domain], job_title: titles, location: [loc] }));
-      steps.push(() => co({ domain: [domain], job_title: titles }));
-    }
-    if (loc) steps.push(() => co({ domain: [domain], location: [loc] }));
-    steps.push(() => co({ domain: [domain] }));
+  // Tightened to ≤4 ContactOut calls ($0.20 worst, was 8/$0.40). We keep only
+  // the high-value steps: role-matched at the exact domain (location-first),
+  // role-matched by company name, then ONE role-agnostic fallback so we still
+  // show *someone* at the company. The dropped steps (domain+location,
+  // company+title+location, company+location) were either role-agnostic-but-
+  // local or redundant — low value for the cost. Location stays on the primary
+  // domain+title step where international noise matters most.
+  if (domain && titles.length) {
+    if (loc) steps.push(() => co({ domain: [domain], job_title: titles, location: [loc] }));
+    steps.push(() => co({ domain: [domain], job_title: titles }));
   }
   if (titles.length) {
-    if (loc) steps.push(() => co({ company: [company], job_title: titles, location: [loc] }));
     steps.push(() => co({ company: [company], job_title: titles }));
   }
-  if (loc) steps.push(() => co({ company: [company], location: [loc] }));
-  steps.push(() => co({ company: [company] }));
+  // Role-agnostic last resort: the exact domain (no namesake risk) when we have
+  // one, otherwise the company name. Beats returning nobody.
+  steps.push(() => co(domain ? { domain: [domain] } : { company: [company] }));
   steps.push(() => cs({ experience_company_name: company }));
   return waterfall("similar", steps);
 }
