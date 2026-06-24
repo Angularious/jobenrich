@@ -1,12 +1,24 @@
 import { getDomain } from "tldts";
 import { callOrthogonal } from "@/lib/orthogonal";
 
+// Profile data already present in the ContactOut search response (no extra
+// cost). Stored as raw strings because that's how ContactOut formats them.
+export interface SearchProfile {
+  bio: string | null;
+  experience: string[]; // "Title at Company in YYYY - YYYY/Present"
+  education: string[];  // "Degree at School in YYYY - YYYY"
+  // Whether ContactOut has email/phone — lets the enrich route skip the
+  // $0.33 ContactOut reveal step when both are false.
+  contactAvailability: { email: boolean; phone: boolean } | null;
+}
+
 export interface Person {
   name: string;
   title: string;
   linkedinUrl: string;
   profilePictureUrl: string | null;
   source: "contactout" | "coresignal";
+  searchProfile?: SearchProfile;
 }
 
 // Recruiter / people-ops titles, broad enough to catch how teams self-describe.
@@ -28,14 +40,44 @@ const RECRUITER_TITLES = [
 
 /* ── ContactOut (/v1/people/search, reveal_info:false → $0.05) ───────── */
 
+interface ContactOutAvailability {
+  phone?: boolean;
+  work_email?: boolean;
+  personal_email?: boolean;
+}
+interface ContactOutCompany {
+  name?: string;
+  logo_url?: string;
+  size?: number;
+  overview?: string;
+  headquarter?: string;
+  founded_at?: number;
+  revenue?: number;
+  domain?: string;
+}
 interface ContactOutProfile {
   full_name?: string;
   title?: string;
   headline?: string;
   profile_picture_url?: string;
+  summary?: string;
+  experience?: string[];
+  education?: string[];
+  contact_availability?: ContactOutAvailability;
+  company?: ContactOutCompany;
 }
 interface ContactOutSearchResponse {
   profiles?: Record<string, ContactOutProfile>;
+}
+
+// Company-level metadata surfaced for free from the ContactOut search response.
+export interface CompanyMeta {
+  logoUrl: string | null;
+  size: number | null;       // employee count bucket
+  overview: string | null;   // company description
+  hq: string | null;         // headquarter string
+  founded: number | null;    // founding year
+  revenue: number | null;    // USD
 }
 
 function contactOutSearch(body: Record<string, unknown>) {
@@ -47,21 +89,55 @@ function contactOutSearch(body: Record<string, unknown>) {
   });
 }
 
+function coMeta(c: ContactOutCompany | undefined): CompanyMeta | null {
+  if (!c) return null;
+  return {
+    logoUrl: (typeof c.logo_url === "string" && c.logo_url) ? c.logo_url : null,
+    size: (typeof c.size === "number" && c.size > 0) ? c.size : null,
+    overview: (typeof c.overview === "string" && c.overview.trim()) ? c.overview.trim() : null,
+    hq: (typeof c.headquarter === "string" && c.headquarter.trim()) ? c.headquarter.trim() : null,
+    founded: (typeof c.founded_at === "number" && c.founded_at > 1800) ? c.founded_at : null,
+    revenue: (typeof c.revenue === "number" && c.revenue > 0) ? c.revenue : null,
+  };
+}
+
 function fromContactOut(
   resp: ContactOutSearchResponse | undefined,
   limit: number
-): Person[] {
+): { people: Person[]; companyMeta: CompanyMeta | null } {
   const profiles = resp?.profiles;
-  if (!profiles || typeof profiles !== "object") return [];
-  return Object.entries(profiles)
+  if (!profiles || typeof profiles !== "object") return { people: [], companyMeta: null };
+  let companyMeta: CompanyMeta | null = null;
+  const people = Object.entries(profiles)
     .slice(0, limit)
-    .map(([url, p]) => ({
-      name: p.full_name ?? "",
-      title: p.title ?? p.headline ?? "",
-      linkedinUrl: url,
-      profilePictureUrl: p.profile_picture_url ?? null,
-      source: "contactout" as const,
-    }));
+    .map(([url, p]) => {
+      // Grab company meta from the first profile that has it.
+      if (!companyMeta) companyMeta = coMeta(p.company);
+      const ca = p.contact_availability;
+      const searchProfile: SearchProfile | undefined =
+        p.summary || p.experience?.length || p.education?.length || ca
+          ? {
+              bio: p.summary?.trim() || null,
+              experience: p.experience ?? [],
+              education: p.education ?? [],
+              contactAvailability: ca
+                ? {
+                    email: Boolean(ca.work_email || ca.personal_email),
+                    phone: Boolean(ca.phone),
+                  }
+                : null,
+            }
+          : undefined;
+      return {
+        name: p.full_name ?? "",
+        title: p.title ?? p.headline ?? "",
+        linkedinUrl: url,
+        profilePictureUrl: p.profile_picture_url ?? null,
+        source: "contactout" as const,
+        searchProfile,
+      };
+    });
+  return { people, companyMeta };
 }
 
 /* ── Coresignal (employee preview → $0.021) ──────────────────────────── */
@@ -110,24 +186,27 @@ function fromCoresignal(
 }
 
 /* ── Waterfall runner ────────────────────────────────────────────────
-   Each step fires only if the previous returned zero people. A step that
-   throws is treated as empty and we move on. If EVERY step throws (i.e. we
-   never got a clean response), rethrow so the caller can flag an error —
-   distinct from a successful search that simply found nobody.            */
+   Each step fires only if the previous returned zero people. CompanyMeta
+   is captured from the first step that returns it (even if that step
+   returned no people) so we still get logo/context on empty results.    */
+
+type StepResult = { people: Person[]; companyMeta: CompanyMeta | null };
 
 async function waterfall(
   label: string,
-  steps: Array<() => Promise<Person[]>>
-): Promise<Person[]> {
+  steps: Array<() => Promise<StepResult>>
+): Promise<StepResult> {
   let anySuccess = false;
   let lastErr: unknown;
+  let bestMeta: CompanyMeta | null = null;
   for (const step of steps) {
     try {
-      const people = await step();
+      const { people, companyMeta } = await step();
       anySuccess = true;
+      if (companyMeta && !bestMeta) bestMeta = companyMeta;
       if (people.length) {
         console.log(`[people] ${label}: ${people.length} found`);
-        return people;
+        return { people, companyMeta: bestMeta };
       }
     } catch (err) {
       lastErr = err;
@@ -136,7 +215,7 @@ async function waterfall(
   }
   if (!anySuccess && lastErr) throw lastErr;
   console.log(`[people] ${label}: 0 found`);
-  return [];
+  return { people: [], companyMeta: bestMeta };
 }
 
 export interface FinderInput {
@@ -156,71 +235,33 @@ export interface FinderInput {
 // returns the WRONG people, not when it returns none.
 export function findSimilarPeople(
   input: FinderInput & { jobTitle?: string }
-): Promise<Person[]> {
+): Promise<StepResult> {
   const { company, domain, jobTitle } = input;
   const loc =
     input.location && !isVirtualLocation(input.location) ? input.location : null;
   const LIMIT = 5;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
-  const steps: Array<() => Promise<Person[]>> = [];
+  const steps: Array<() => Promise<StepResult>> = [];
+  const co = (q: Record<string, unknown>) =>
+    contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
+  const cs = (q: Record<string, unknown>) =>
+    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null }));
 
-  // Precise: domain-only (when we have one) — tried first.
   if (domain) {
     if (titles.length) {
-      // With location filter first (US/local priority).
-      if (loc)
-        steps.push(() =>
-          contactOutSearch({ domain: [domain], job_title: titles, location: [loc] }).then(
-            (r) => fromContactOut(r, LIMIT)
-          )
-        );
-      steps.push(() =>
-        contactOutSearch({ domain: [domain], job_title: titles }).then((r) =>
-          fromContactOut(r, LIMIT)
-        )
-      );
+      if (loc) steps.push(() => co({ domain: [domain], job_title: titles, location: [loc] }));
+      steps.push(() => co({ domain: [domain], job_title: titles }));
     }
-    // Domain only (no title filter) — location-first, then global.
-    if (loc)
-      steps.push(() =>
-        contactOutSearch({ domain: [domain], location: [loc] }).then((r) =>
-          fromContactOut(r, LIMIT)
-        )
-      );
-    steps.push(() =>
-      contactOutSearch({ domain: [domain] }).then((r) => fromContactOut(r, LIMIT))
-    );
+    if (loc) steps.push(() => co({ domain: [domain], location: [loc] }));
+    steps.push(() => co({ domain: [domain] }));
   }
-
-  // Fallback: company name (primary path when no domain was resolved; safety
-  // net for an imperfect domain otherwise).
   if (titles.length) {
-    if (loc)
-      steps.push(() =>
-        contactOutSearch({ company: [company], job_title: titles, location: [loc] }).then(
-          (r) => fromContactOut(r, LIMIT)
-        )
-      );
-    steps.push(() =>
-      contactOutSearch({ company: [company], job_title: titles }).then((r) =>
-        fromContactOut(r, LIMIT)
-      )
-    );
+    if (loc) steps.push(() => co({ company: [company], job_title: titles, location: [loc] }));
+    steps.push(() => co({ company: [company], job_title: titles }));
   }
-  if (loc)
-    steps.push(() =>
-      contactOutSearch({ company: [company], location: [loc] }).then((r) =>
-        fromContactOut(r, LIMIT)
-      )
-    );
-  steps.push(() =>
-    contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT))
-  );
-  steps.push(() =>
-    coresignalSearch({ experience_company_name: company }).then((r) =>
-      fromCoresignal(r, LIMIT, company)
-    )
-  );
+  if (loc) steps.push(() => co({ company: [company], location: [loc] }));
+  steps.push(() => co({ company: [company] }));
+  steps.push(() => cs({ experience_company_name: company }));
   return waterfall("similar", steps);
 }
 
@@ -239,75 +280,37 @@ function isVirtualLocation(loc: string): boolean {
 // ContactOut step is tried WITH the location filter first — if that returns
 // nobody the waterfall falls through to the same step without the filter, so
 // a too-specific location never blocks results entirely.
-export function findRecruiters(input: FinderInput): Promise<Person[]> {
+export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const { company, domain } = input;
   const loc =
     input.location && !isVirtualLocation(input.location) ? input.location : null;
   const LIMIT = 3;
-  const steps: Array<() => Promise<Person[]>> = [];
+  const steps: Array<() => Promise<StepResult>> = [];
+  const co = (q: Record<string, unknown>) =>
+    contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
+  const cs = (q: Record<string, unknown>) =>
+    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null }));
 
-  // Precise: recruiters at the exact domain.
   if (domain) {
-    // With location filter first (more targeted).
-    if (loc)
-      steps.push(() =>
-        contactOutSearch({ domain: [domain], job_title: RECRUITER_TITLES, location: [loc] }).then(
-          (r) => fromContactOut(r, LIMIT)
-        )
-      );
-    // Without location filter (fallback when location is too narrow).
-    steps.push(() =>
-      contactOutSearch({ domain: [domain], job_title: RECRUITER_TITLES }).then((r) =>
-        fromContactOut(r, LIMIT)
-      )
-    );
+    if (loc) steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES, location: [loc] }));
+    steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES }));
   }
-
-  // Fallback by company name (primary when no domain; safety net otherwise).
-  if (loc)
-    steps.push(() =>
-      contactOutSearch({ company: [company], job_title: RECRUITER_TITLES, location: [loc] }).then(
-        (r) => fromContactOut(r, LIMIT)
-      )
-    );
-  steps.push(() =>
-    contactOutSearch({ company: [company], job_title: RECRUITER_TITLES }).then((r) =>
-      fromContactOut(r, LIMIT)
-    )
-  );
-  steps.push(() =>
-    coresignalSearch({
-      experience_company_name: company,
-      experience_title: "Recruiter",
-    }).then((r) => fromCoresignal(r, LIMIT, company))
-  );
-  // Founders/early teams often hire directly — fall back to anyone at the company.
-  steps.push(() =>
-    coresignalSearch({ experience_company_name: company }).then((r) =>
-      fromCoresignal(r, LIMIT, company)
-    )
-  );
+  if (loc) steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES, location: [loc] }));
+  steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES }));
+  steps.push(() => cs({ experience_company_name: company, experience_title: "Recruiter" }));
+  steps.push(() => cs({ experience_company_name: company }));
   return waterfall("recruiters", steps);
 }
 
 // Alumni from a given school at the company — target 5.
-export function findAlumni(input: FinderInput & { school: string }): Promise<Person[]> {
+export function findAlumni(input: FinderInput & { school: string }): Promise<StepResult> {
   const { company, domain, school } = input;
   const LIMIT = 5;
-  // Domain-first, same as the other finders: match alumni at the exact domain
-  // first, then fall back to the company name only if that found nobody.
-  const steps: Array<() => Promise<Person[]>> = [];
-  if (domain)
-    steps.push(() =>
-      contactOutSearch({ domain: [domain], education: [school] }).then((r) =>
-        fromContactOut(r, LIMIT)
-      )
-    );
-  steps.push(() =>
-    contactOutSearch({ company: [company], education: [school] }).then((r) =>
-      fromContactOut(r, LIMIT)
-    )
-  );
+  const steps: Array<() => Promise<StepResult>> = [];
+  const co = (q: Record<string, unknown>) =>
+    contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
+  if (domain) steps.push(() => co({ domain: [domain], education: [school] }));
+  steps.push(() => co({ company: [company], education: [school] }));
   return waterfall("alumni", steps);
 }
 

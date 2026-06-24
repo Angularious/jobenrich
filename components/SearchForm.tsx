@@ -58,8 +58,7 @@ export function SearchForm({
           style={{ display: "none" }}
         />
         <p className="font-bold text-sm text-ink mb-4 text-center">
-          Drop a job posting — or a company careers page — and we surface who to
-          reach out to, plus the recruiters hiring.
+          Paste a job posting → find recruiters, alumni, and teammates → get their contact
         </p>
 
         <div className="nb-input mb-3" style={{ ["--nb" as string]: "var(--color-acc-yellow)" }}>

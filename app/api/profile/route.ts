@@ -112,7 +112,10 @@ export async function POST(request: Request) {
   }
 
   const p = raw?.person;
-  if (!p) return NextResponse.json<ProfileData>(EMPTY_PROFILE);
+  if (!p) {
+    console.log("[profile] Apollo: no person found");
+    return NextResponse.json<ProfileData>(EMPTY_PROFILE);
+  }
 
   // Employment: current roles first, then most recent, cap at 4.
   const jobs: ProfileJob[] = (p.employment_history ?? [])
@@ -124,7 +127,7 @@ export async function POST(request: Request) {
       endYear: e.current ? null : parseYear(e.end_date),
       current: Boolean(e.current),
     }))
-    .filter((j) => j.title) // require at least a title; company may be blank (Apollo gap)
+    .filter((j) => j.title)
     .sort((a, b) => {
       if (a.current !== b.current) return a.current ? -1 : 1;
       return (b.startYear ?? 0) - (a.startYear ?? 0);

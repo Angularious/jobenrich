@@ -86,6 +86,13 @@ function isRealEmail(v: unknown): v is string {
   );
 }
 
+// Apollo email_status can be "invalid", "do_not_email", "bounced", or "spam" —
+// those are confirmed-bad and should be dropped even if the address looks real.
+function isValidEmailStatus(status: string | null | undefined): boolean {
+  if (!status) return true; // unknown status → keep
+  return !/^(invalid|do_not_email|bounced|spam)$/i.test(status);
+}
+
 // "City, State, Country" from whatever location parts a provider gives.
 function joinLocation(...parts: Array<unknown>): string | null {
   const seen = new Set<string>();
@@ -132,7 +139,11 @@ async function apolloLookup(profile: string): Promise<ProviderResult> {
   const p = raw?.person;
   if (!p) return EMPTY;
   const emails = dedupe(
-    [p.email, ...collectStrings(p.personal_emails, "email")].filter(isRealEmail)
+    [
+      // Primary email: check both format and Apollo's status signal.
+      isRealEmail(p.email) && isValidEmailStatus(p.email_status) ? p.email : null,
+      ...collectStrings(p.personal_emails, "email").filter(isRealEmail),
+    ].filter((e): e is string => e !== null)
   );
   const links: EnrichLink[] = [];
   const tw = asUrl(p.twitter_url);
@@ -221,7 +232,12 @@ async function contactOutLookup(profile: string): Promise<ProviderResult> {
 }
 
 export async function POST(request: Request) {
-  let body: GuardBody & { linkedinUrl?: string };
+  let body: GuardBody & {
+    linkedinUrl?: string;
+    // Optional hint from the ContactOut search result. When email is false,
+    // skip the $0.33 ContactOut reveal — they've already told us they have nothing.
+    contactHint?: { email: boolean; phone: boolean } | null;
+  };
   try {
     body = await request.json();
   } catch {
@@ -266,6 +282,11 @@ export async function POST(request: Request) {
   };
 
   for (const [name, lookup] of steps) {
+    // ContactOut search already told us they have no email — skip the $0.33 reveal.
+    if (name === "contactout" && body.contactHint?.email === false) {
+      console.log("[enrich] contactout: skipped (contact_availability.email=false)");
+      continue;
+    }
     let r: ProviderResult;
     try {
       r = await lookup(linkedinUrl);

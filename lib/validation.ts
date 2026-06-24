@@ -22,7 +22,9 @@ export function canonicalizeLinkedInJobUrl(raw: string): string | null {
     }
 
     // Share / canonical URL: /jobs/view/4398396153
-    const viewMatch = u.pathname.match(/\/jobs\/view\/(\d+)/);
+    // Slug URL:  /jobs/view/title-slug-at-company-4398396153/
+    // Both: job ID is the last digit sequence (≥7 digits) in the path.
+    const viewMatch = u.pathname.match(/\/jobs\/view\/.*?(\d{7,})\/?$/);
     if (viewMatch) {
       return `https://www.linkedin.com/jobs/view/${viewMatch[1]}`;
     }
