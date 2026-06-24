@@ -7,9 +7,10 @@ export interface SearchProfile {
   bio: string | null;
   experience: string[]; // "Title at Company in YYYY - YYYY/Present"
   education: string[];  // "Degree at School in YYYY - YYYY"
-  // Whether ContactOut has email/phone — lets the enrich route skip the
-  // $0.33 ContactOut reveal step when both are false.
-  contactAvailability: { email: boolean; phone: boolean } | null;
+  // Whether ContactOut has an email — lets the enrich route skip the $0.33
+  // ContactOut reveal step when it's known to have none. (Phone availability
+  // is intentionally not tracked — this site never surfaces phone numbers.)
+  contactAvailability: { email: boolean } | null;
 }
 
 export interface Person {
@@ -121,10 +122,7 @@ function fromContactOut(
               experience: p.experience ?? [],
               education: p.education ?? [],
               contactAvailability: ca
-                ? {
-                    email: Boolean(ca.work_email || ca.personal_email),
-                    phone: Boolean(ca.phone),
-                  }
+                ? { email: Boolean(ca.work_email || ca.personal_email) }
                 : null,
             }
           : undefined;

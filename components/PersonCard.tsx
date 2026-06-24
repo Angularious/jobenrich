@@ -4,7 +4,7 @@ export interface SearchProfile {
   bio: string | null;
   experience: string[];
   education: string[];
-  contactAvailability: { email: boolean; phone: boolean } | null;
+  contactAvailability: { email: boolean } | null;
 }
 
 export interface PersonData {

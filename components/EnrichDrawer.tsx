@@ -17,7 +17,6 @@ export interface EnrichLink {
 
 export interface EnrichData {
   emails: string[];
-  phones: string[];
   source: "apollo" | "bytemine" | "contactout" | "none";
   company: string | null;
   position: string | null;
@@ -31,10 +30,6 @@ interface EnrichDrawerProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
-  onGetPhone?: () => void;
-  phoneLoading?: boolean;
-  phoneAttempted?: boolean; // a phone lookup already ran for this person (even if empty)
-  phoneError?: string | null;
 }
 
 function Band({ children }: { children: React.ReactNode }) {
@@ -45,17 +40,7 @@ function Band({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function EnrichDrawer({
-  person,
-  data,
-  loading,
-  error,
-  onClose,
-  onGetPhone,
-  phoneLoading,
-  phoneAttempted,
-  phoneError,
-}: EnrichDrawerProps) {
+export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDrawerProps) {
   const isOpen = person !== null;
 
   useEffect(() => {
@@ -66,19 +51,11 @@ export function EnrichDrawer({
   }, [isOpen]);
 
   const emails = data?.emails ?? [];
-  const phones = data?.phones ?? [];
   const links = data?.links ?? [];
   const hasEmails = emails.length > 0;
-  const hasPhones = phones.length > 0;
   const hasLinks = links.length > 0;
-  const hasContact = hasEmails || hasPhones;
   const hasProfile = Boolean(data?.company || data?.location || hasLinks);
-  const nothing = !loading && !error && data && !hasContact && !hasProfile;
-  // When the email came from ContactOut, that step was a full reveal
-  // (include_phone:true) — the phone is already as resolved as it gets, so we
-  // don't offer a separate "Get phone" call. Otherwise ContactOut never ran,
-  // so the phone fallback is still worth offering.
-  const phoneResolvedByEnrich = data?.source === "contactout";
+  const nothing = !loading && !error && data && !hasEmails && !hasProfile;
 
   return (
     <>
@@ -148,9 +125,9 @@ export function EnrichDrawer({
               </div>
 
               <div className="px-6">
-                {/* Email + Phone shown whenever the lookup resolved with ANY
-                    data (not gated on email alone) — a contact can have a phone
-                    or profile but no email, and we still want those reachable. */}
+                {/* Email — shown whenever the lookup resolved with any data
+                    (email or profile). This site surfaces email only, never
+                    phone numbers, by design. */}
                 {!nothing && (
                   <>
                     <Band>■ Email</Band>
@@ -168,48 +145,6 @@ export function EnrichDrawer({
                       </div>
                     ) : (
                       <p className="font-mono text-[11px] text-dim">No email found.</p>
-                    )}
-                  </>
-                )}
-
-                {!nothing && (
-                  <>
-                    <Band>■ Phone</Band>
-                    {hasPhones ? (
-                      <div className="space-y-2">
-                        {phones.map((phone) => (
-                          <a
-                            key={phone}
-                            href={`tel:${phone}`}
-                            className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base"
-                          >
-                            {phone}
-                          </a>
-                        ))}
-                      </div>
-                    ) : phoneResolvedByEnrich ? (
-                      // ContactOut already did a full reveal (incl. phone) when it
-                      // found the email — nothing more to fetch.
-                      <p className="font-mono text-[11px] text-dim">No phone found.</p>
-                    ) : !phoneAttempted ? (
-                      // One-shot: the ContactOut fallback costs $0.55, so we
-                      // look up a phone at most once per person. Note the cost.
-                      <>
-                        <button
-                          onClick={onGetPhone}
-                          disabled={phoneLoading}
-                          className="nb-btn px-4 py-2 text-[11px] font-black uppercase tracking-wider"
-                        >
-                          {phoneLoading ? "Finding phone…" : "Get phone →"}
-                        </button>
-                        <p className="font-mono text-[10px] text-dim mt-1.5">One lookup per person.</p>
-                      </>
-                    ) : phoneError ? (
-                      // Looked once, the call failed — no retry (it may have charged).
-                      <p className="font-mono text-[11px] font-bold text-acc-pink">{phoneError}</p>
-                    ) : (
-                      // Looked once (Bytemine → ContactOut), found nothing.
-                      <p className="font-mono text-[11px] text-dim">No phone found.</p>
                     )}
                   </>
                 )}

@@ -4,27 +4,20 @@ import { checkRateLimit, retryAfter } from "./rateLimit";
 import { withinCap, recordSpend, capResetAt } from "./spendCap";
 import { verifyRequestToken, verifyPageStamp } from "./tokens";
 
-/* ── Per-step config ──────────────────────────────────────────────
-   DAILY_LIMIT is per unique visitor (composite fingerprint), per step.
-   `cost` is the WORST-CASE Orthogonal cost per call in USD — it's the
-   amount RESERVED against the daily cap up front (gate 5), so the cap can
-   never be *started* past. Routes whose real cost varies by which
-   providers fired (enrich, phone) reconcile to the ACTUAL cost by passing
-   it to `recordSpend(actual)` after the work; the rest record `cost`.   */
+/* ── Per-step config ────────────────────────────────────────────── */
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const MIN_FORM_MS = 1500;
 
 // `limit` = per-visitor calls/day for this step. `cost` = WORST-CASE USD the
 // gate checks against the daily cap BEFORE starting work (so a request that
 // could blow the cap isn't started). Routes then record the ACTUAL spend via
-// recordSpend(actual) — search/alumni/enrich/phone all tally real cost.
+// recordSpend(actual) — search/alumni/enrich all tally real cost.
 export const STEPS = {
   // search worst: resolve $0.09 + people ~$0.221 + recruiters ~$0.242 ≈ $0.55.
   search: { cost: 0.6, requireTiming: true, noun: "searches", limit: 10 },
   alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups", limit: 10 },
-  enrich: { cost: 0.59, requireTiming: false, noun: "contact lookups", limit: 10 }, // worst: Apollo .01 + Bytemine .03 + ContactOut incl. phone .55
+  enrich: { cost: 0.37, requireTiming: false, noun: "contact lookups", limit: 10 }, // worst: Apollo .01 + Bytemine .03 + ContactOut .33 (email only)
   profile: { cost: 0.01, requireTiming: false, noun: "profile lookups", limit: 10 },
-  phone: { cost: 0.58, requireTiming: false, noun: "phone lookups", limit: 5 }, // expensive ($0.55 ContactOut tier) → tighter cap
 } as const;
 
 export type StepName = keyof typeof STEPS;

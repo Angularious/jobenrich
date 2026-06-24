@@ -34,14 +34,8 @@ const API_CALLS = [
   {
     step: "Contact reveal — email",
     provider: "Cheap → rich → deep enrichment waterfall",
-    cost: "$0.01 → $0.03 → $0.55",
-    note: "Next step fires only if no email yet",
-  },
-  {
-    step: "Contact reveal — phone",
-    provider: "Contact enrichment + deep reveal",
-    cost: "$0.03 → $0.55",
-    note: "Mobile + work numbers; deep reveal only as a backstop",
+    cost: "$0.01 → $0.03 → $0.33",
+    note: "Next step fires only if no email yet (email only — never phone)",
   },
   {
     step: "Alumni search",

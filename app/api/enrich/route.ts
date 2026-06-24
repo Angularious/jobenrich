@@ -19,9 +19,8 @@ export type EnrichSource = "apollo" | "bytemine" | "contactout" | "none";
 
 export interface EnrichResult {
   emails: string[];
-  phones: string[];
   source: EnrichSource;
-  // Extra profile context surfaced alongside the contact details.
+  // Extra profile context surfaced alongside the email.
   company: string | null;
   position: string | null;
   location: string | null;
@@ -31,15 +30,15 @@ export interface EnrichResult {
 // What each provider step contributes to the merged result.
 interface ProviderResult {
   emails: string[];
-  phones: string[];
   company: string | null;
   position: string | null;
   location: string | null;
   links: EnrichLink[];
 }
 
-// Pull every string that looks like an email/phone out of an unknown payload.
-function collectStrings(val: unknown, keyHint: "email" | "phone"): string[] {
+// Pull every string that looks like an email out of an unknown payload.
+// (We intentionally do NOT surface phone numbers — email only, for privacy.)
+function collectStrings(val: unknown, keyHint: "email"): string[] {
   const out: string[] = [];
   const visit = (v: unknown) => {
     if (!v) return;
@@ -79,9 +78,6 @@ function asUrl(v: unknown): string | null {
   return /^https?:\/\//i.test(s) ? s : `https://${s}`;
 }
 
-// Cap how many candidate numbers we surface — providers can return several.
-const MAX_PHONES = 5;
-
 // Apollo masks unrevealed emails with a placeholder; never surface those.
 function isRealEmail(v: unknown): v is string {
   return (
@@ -110,7 +106,6 @@ function joinLocation(...parts: Array<unknown>): string | null {
 
 const EMPTY: ProviderResult = {
   emails: [],
-  phones: [],
   company: null,
   position: null,
   location: null,
@@ -120,8 +115,7 @@ const EMPTY: ProviderResult = {
 /* Step 1 — Apollo /api/v1/people/match ($0.01). Verified work email +
    personal emails + rich profile context, straight from a LinkedIn URL.
    The raw payload is huge (~190 KB) — pull only the fields we need and
-   never log the whole body. Phones are not requested (kept to the phone
-   tiers below) so the call stays a flat $0.01. */
+   never log the whole body. */
 interface ApolloPerson {
   email?: string | null;
   email_status?: string | null;
@@ -157,7 +151,6 @@ async function apolloLookup(profile: string): Promise<ProviderResult> {
   if (gh) links.push({ label: "GitHub", url: gh });
   return {
     emails,
-    phones: [],
     company: cleanStr(p.organization?.name),
     position: cleanStr(p.title),
     location: joinLocation(p.city, p.state, p.country),
@@ -165,14 +158,13 @@ async function apolloLookup(profile: string): Promise<ProviderResult> {
   };
 }
 
-/* Step 2 — Bytemine /contacts/enrich ($0.03). Work + personal email AND
-   mobile + work phone in one call, SMTP-validated. Flat response body. */
+/* Step 2 — Bytemine /contacts/enrich ($0.03). Work + personal email,
+   SMTP-validated. (Bytemine also returns phone numbers; we deliberately
+   ignore them — this site surfaces email only, for privacy.) */
 interface BytemineData {
   work_email?: string | null;
   email?: string | null;
   personal_email?: string | null;
-  mobile_number?: string | null;
-  work_number?: string | null;
   job_title?: string | null;
   company_name?: string | null;
   person_city?: string | null;
@@ -188,17 +180,11 @@ async function bytemineLookup(profile: string): Promise<ProviderResult> {
   });
   if (!d) return EMPTY;
   const emails = dedupe([d.work_email, d.email, d.personal_email].filter(isRealEmail));
-  const phones = dedupe(
-    [d.mobile_number, d.work_number]
-      .map(cleanStr)
-      .filter((n): n is string => Boolean(n))
-  ).slice(0, MAX_PHONES);
   const links: EnrichLink[] = [];
   const tw = asUrl(d.twitter);
   if (tw) links.push({ label: "Twitter / X", url: tw });
   return {
     emails,
-    phones,
     company: cleanStr(d.company_name),
     position: cleanStr(d.job_title),
     location: joinLocation(d.person_city, d.person_state),
@@ -206,18 +192,14 @@ async function bytemineLookup(profile: string): Promise<ProviderResult> {
   };
 }
 
-/* Step 3 — ContactOut /v1/people/linkedin. Last resort for email. When we're
-   already paying ContactOut's reveal AND the initial search said it has a phone
-   (or didn't say), we ask for the phone too (include_phone:true → $0.55) so the
-   user never needs a separate phone call. If the search said ContactOut has NO
-   phone, we use include_phone:false ($0.33) — no point paying for a phone that
-   isn't there. */
-async function contactOutLookup(profile: string, includePhone: boolean): Promise<ProviderResult> {
+/* Step 3 — ContactOut /v1/people/linkedin ($0.33, include_phone:false). Last
+   resort for email; categorized emails + github. Phone is never requested. */
+async function contactOutLookup(profile: string): Promise<ProviderResult> {
   const raw = await callOrthogonal<Record<string, unknown>>({
     api: "contactout",
     path: "/v1/people/linkedin",
     method: "GET",
-    query: { profile, include_phone: includePhone },
+    query: { profile, include_phone: false },
   });
   // ContactOut nests contact data under `profile` on some responses.
   const root = (raw?.profile as Record<string, unknown>) ?? raw ?? {};
@@ -229,15 +211,11 @@ async function contactOutLookup(profile: string, includePhone: boolean): Promise
       ...collectStrings(root.emails, "email"),
     ].filter(isRealEmail)
   );
-  const phones = dedupe([
-    ...collectStrings(root.phone, "phone"),
-    ...collectStrings(root.phones, "phone"),
-  ]).slice(0, MAX_PHONES);
   const links = dedupe(collectStrings(root.github, "email")).map((url) => ({
     label: "GitHub",
     url,
   }));
-  return { ...EMPTY, emails, phones, links };
+  return { ...EMPTY, emails, links };
 }
 
 export async function POST(request: Request) {
@@ -245,7 +223,7 @@ export async function POST(request: Request) {
     linkedinUrl?: string;
     // Optional hint from the ContactOut search result. When email is false,
     // skip the $0.33 ContactOut reveal — they've already told us they have nothing.
-    contactHint?: { email: boolean; phone: boolean } | null;
+    contactHint?: { email: boolean } | null;
   };
   try {
     body = await request.json();
@@ -267,28 +245,23 @@ export async function POST(request: Request) {
 
   // Cheap → rich → last-resort. Each step fires only if no email yet, and a
   // step that throws degrades to the next instead of failing the request.
-  // Profile context, phones, and links accumulate across steps so an email
-  // found late still carries any context an earlier step surfaced.
-  // If the initial search said ContactOut has a phone (or didn't say), grab it
-  // in the same reveal; if it said there's none, use the cheaper email-only tier.
-  const coWantsPhone = body.contactHint?.phone !== false;
+  // Profile context and links accumulate across steps so an email found late
+  // still carries any context an earlier step surfaced.
   const steps: Array<[EnrichSource, (p: string) => Promise<ProviderResult>]> = [
     ["apollo", apolloLookup],
     ["bytemine", bytemineLookup],
-    ["contactout", (p) => contactOutLookup(p, coWantsPhone)],
+    ["contactout", contactOutLookup],
   ];
   // Orthogonal charges per call attempted (even when it returns nothing), so
   // we tally the real spend as providers fire and reconcile the cap to it.
   const PROVIDER_COST: Record<EnrichSource, number> = {
-    apollo: 0.01, bytemine: 0.03, contactout: coWantsPhone ? 0.55 : 0.33, none: 0,
+    apollo: 0.01, bytemine: 0.03, contactout: 0.33, none: 0,
   };
 
   let company: string | null = null;
   let position: string | null = null;
   let location: string | null = null;
-  let phones: string[] = [];
   let links: EnrichLink[] = [];
-  let phoneSource: EnrichSource = "none";
   let spentUsd = 0;
 
   const mergeLinks = (next: EnrichLink[]) => {
@@ -317,15 +290,12 @@ export async function POST(request: Request) {
       company = company ?? r.company;
       position = position ?? r.position;
       location = location ?? r.location;
-      if (r.phones.length && !phones.length) phoneSource = name;
-      phones = dedupe([...phones, ...r.phones]).slice(0, MAX_PHONES);
       mergeLinks(r.links);
 
       if (r.emails.length) {
         console.log(`[enrich] ${name}: email found`);
         return NextResponse.json<EnrichResult>({
           emails: r.emails,
-          phones,
           source: name,
           company,
           position,
@@ -335,12 +305,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // No email from any provider — still return whatever context/phones we got.
+    // No email from any provider — still return whatever context/links we got.
     console.log("[enrich] no email found");
     return NextResponse.json<EnrichResult>({
       emails: [],
-      phones,
-      source: phones.length || links.length ? phoneSource : "none",
+      source: "none",
       company,
       position,
       location,

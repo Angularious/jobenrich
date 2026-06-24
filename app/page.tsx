@@ -49,17 +49,10 @@ function makeId() {
 
 function exportCSV(session: SearchSession, enrichCache: Record<string, EnrichData>) {
   const { results } = session;
-  const header = ["Name", "Title", "Type", "LinkedIn URL", "Email", "Phone"];
+  const header = ["Name", "Title", "Type", "LinkedIn URL", "Email"];
   const toRow = (p: PersonData, type: string) => {
     const e = enrichCache[p.linkedinUrl];
-    return [
-      p.name,
-      p.title,
-      type,
-      p.linkedinUrl,
-      e?.emails[0] ?? "",
-      e?.phones[0] ?? "",
-    ];
+    return [p.name, p.title, type, p.linkedinUrl, e?.emails[0] ?? ""];
   };
   const rows = [
     header,
@@ -174,12 +167,6 @@ export default function Home() {
   const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
-  const [phoneLoading, setPhoneLoading] = useState(false);
-  const [phoneError, setPhoneError] = useState<string | null>(null);
-  // URLs we've already run a phone lookup for (empty result included) — so the
-  // "Get phone" button doesn't reappear and let the user re-pay for nothing.
-  const [phoneChecked, setPhoneChecked] = useState<Record<string, boolean>>({});
-
   const enrichedUrls = new Set(Object.keys(enrichCache));
 
   const [profileCache, setProfileCache] = useState<Record<string, ProfileData>>({});
@@ -247,7 +234,6 @@ export default function Home() {
   async function handleEnrich(person: PersonData) {
     setEnrichTarget(person);
     setEnrichError(null);
-    setPhoneError(null);
 
     const cached = enrichCache[person.linkedinUrl];
     if (cached) {
@@ -259,11 +245,14 @@ export default function Home() {
     setEnrichData(null);
     setEnrichLoading(true);
     try {
+      // Pass only the email-availability hint (the route uses it to skip the
+      // ContactOut email reveal when the search already said there's none).
+      const emailHint = person.searchProfile?.contactAvailability
+        ? { email: person.searchProfile.contactAvailability.email }
+        : null;
       const r = await apiPost<EnrichData & { error?: string }>("/api/enrich", {
         linkedinUrl: person.linkedinUrl,
-        ...(person.searchProfile?.contactAvailability != null
-          ? { contactHint: person.searchProfile.contactAvailability }
-          : {}),
+        ...(emailHint ? { contactHint: emailHint } : {}),
       });
       if (!r.ok) {
         setEnrichError(errorMessage(r, "Enrichment failed. Try again."));
@@ -283,55 +272,6 @@ export default function Home() {
     setEnrichTarget(null);
     setEnrichData(null);
     setEnrichError(null);
-    setPhoneError(null);
-  }
-
-  async function handleGetPhone() {
-    if (!enrichTarget) return;
-    const url = enrichTarget.linkedinUrl;
-    // Strict one-shot: the ContactOut fallback costs $0.55, so a person's phone
-    // is looked up at most once per session. We mark the URL checked in the
-    // `finally` (success, empty, OR error) so the button never returns.
-    if (phoneChecked[url] || phoneLoading) return;
-    setPhoneLoading(true);
-    setPhoneError(null);
-    try {
-      const r = await apiPost<{ phones: string[]; emails?: string[]; error?: string }>(
-        "/api/phone",
-        {
-          linkedinUrl: url,
-          ...(enrichTarget.searchProfile?.contactAvailability != null
-            ? { contactHint: enrichTarget.searchProfile.contactAvailability }
-            : {}),
-        }
-      );
-      if (!r.ok) {
-        setPhoneError(errorMessage(r, "Couldn't complete the phone lookup."));
-        return;
-      }
-      const phones = r.data.phones ?? [];
-      const newEmails = r.data.emails ?? [];
-      // Merge phones + any emails the (paid) lookup surfaced into the drawer and cache.
-      setEnrichData((prev) =>
-        prev
-          ? { ...prev, phones, emails: Array.from(new Set([...prev.emails, ...newEmails])) }
-          : prev
-      );
-      setEnrichCache((prev) => {
-        const existing = prev[url];
-        if (!existing) return prev;
-        return {
-          ...prev,
-          [url]: { ...existing, phones, emails: Array.from(new Set([...existing.emails, ...newEmails])) },
-        };
-      });
-    } catch {
-      setPhoneError("Couldn't complete the phone lookup.");
-    } finally {
-      // One attempt, period — even on error (the providers may already have charged).
-      setPhoneChecked((prev) => ({ ...prev, [url]: true }));
-      setPhoneLoading(false);
-    }
   }
 
   async function handleProfile(person: PersonData) {
@@ -607,10 +547,6 @@ export default function Home() {
         loading={enrichLoading}
         error={enrichError}
         onClose={closeDrawer}
-        onGetPhone={handleGetPhone}
-        phoneLoading={phoneLoading}
-        phoneAttempted={enrichTarget ? Boolean(phoneChecked[enrichTarget.linkedinUrl]) : false}
-        phoneError={phoneError}
       />
 
       <ProfileDrawer
