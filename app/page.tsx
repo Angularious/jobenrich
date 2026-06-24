@@ -175,6 +175,10 @@ export default function Home() {
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [phoneLoading, setPhoneLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  // URLs we've already run a phone lookup for (empty result included) — so the
+  // "Get phone" button doesn't reappear and let the user re-pay for nothing.
+  const [phoneChecked, setPhoneChecked] = useState<Record<string, boolean>>({});
 
   const enrichedUrls = new Set(Object.keys(enrichCache));
 
@@ -243,6 +247,7 @@ export default function Home() {
   async function handleEnrich(person: PersonData) {
     setEnrichTarget(person);
     setEnrichError(null);
+    setPhoneError(null);
 
     const cached = enrichCache[person.linkedinUrl];
     if (cached) {
@@ -278,25 +283,33 @@ export default function Home() {
     setEnrichTarget(null);
     setEnrichData(null);
     setEnrichError(null);
+    setPhoneError(null);
   }
 
   async function handleGetPhone() {
     if (!enrichTarget) return;
+    const url = enrichTarget.linkedinUrl;
     setPhoneLoading(true);
+    setPhoneError(null);
     try {
       const r = await apiPost<{ phones: string[]; error?: string }>("/api/phone", {
-        linkedinUrl: enrichTarget.linkedinUrl,
+        linkedinUrl: url,
       });
-      if (!r.ok) return;
+      if (!r.ok) {
+        setPhoneError(errorMessage(r, "Couldn't fetch a phone number. Try again."));
+        return;
+      }
       const phones = r.data.phones ?? [];
-      // Merge phones into the open drawer data and the cache.
+      // Merge phones into the open drawer data and the cache, and mark this URL
+      // checked so a zero result shows "No phone found" instead of the button.
       setEnrichData((prev) => (prev ? { ...prev, phones } : prev));
       setEnrichCache((prev) => {
-        const existing = prev[enrichTarget.linkedinUrl];
-        return existing
-          ? { ...prev, [enrichTarget.linkedinUrl]: { ...existing, phones } }
-          : prev;
+        const existing = prev[url];
+        return existing ? { ...prev, [url]: { ...existing, phones } } : prev;
       });
+      setPhoneChecked((prev) => ({ ...prev, [url]: true }));
+    } catch {
+      setPhoneError("Couldn't fetch a phone number. Try again.");
     } finally {
       setPhoneLoading(false);
     }
@@ -564,6 +577,8 @@ export default function Home() {
         onClose={closeDrawer}
         onGetPhone={handleGetPhone}
         phoneLoading={phoneLoading}
+        phoneAttempted={enrichTarget ? Boolean(phoneChecked[enrichTarget.linkedinUrl]) : false}
+        phoneError={phoneError}
       />
 
       <ProfileDrawer

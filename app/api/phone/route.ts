@@ -74,32 +74,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid LinkedIn profile URL." }, { status: 400 });
   }
 
-  await guard.recordSpend();
-
-  // Bytemine first ($0.03) — good phone coverage, cheap.
-  let phones: string[] = [];
+  // Tally real spend (Bytemine always; ContactOut only on fallback) and
+  // reconcile the daily cap to it — the gate reserved the worst case ($0.58).
+  let spentUsd = 0;
   try {
-    phones = await byteminePhonesOnly(linkedinUrl);
-    console.log(`[phone] Bytemine: ${phones.length} found`);
-  } catch (err) {
-    if (err instanceof QuotaExceededError) {
-      return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
-    }
-    console.error("[phone] Bytemine failed:", err);
-  }
-
-  // ContactOut fallback ($0.55) — only when Bytemine came up empty.
-  if (!phones.length) {
+    // Bytemine first ($0.03) — good phone coverage, cheap.
+    let phones: string[] = [];
     try {
-      phones = await contactOutPhones(linkedinUrl);
-      console.log(`[phone] ContactOut: ${phones.length} found`);
+      spentUsd += 0.03;
+      phones = await byteminePhonesOnly(linkedinUrl);
+      console.log(`[phone] Bytemine: ${phones.length} found`);
     } catch (err) {
       if (err instanceof QuotaExceededError) {
         return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
       }
-      console.error("[phone] ContactOut failed:", err);
+      console.error("[phone] Bytemine failed:", err);
     }
-  }
 
-  return NextResponse.json<PhoneResult>({ phones });
+    // ContactOut fallback ($0.55) — only when Bytemine came up empty.
+    if (!phones.length) {
+      try {
+        spentUsd += 0.55;
+        phones = await contactOutPhones(linkedinUrl);
+        console.log(`[phone] ContactOut: ${phones.length} found`);
+      } catch (err) {
+        if (err instanceof QuotaExceededError) {
+          return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+        }
+        console.error("[phone] ContactOut failed:", err);
+      }
+    }
+
+    return NextResponse.json<PhoneResult>({ phones });
+  } finally {
+    await guard.recordSpend(spentUsd);
+  }
 }

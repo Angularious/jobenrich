@@ -6,19 +6,21 @@ import { verifyRequestToken, verifyPageStamp } from "./tokens";
 
 /* ── Per-step config ──────────────────────────────────────────────
    DAILY_LIMIT is per unique visitor (composite fingerprint), per step.
-   `cost` is an APPROXIMATE Orthogonal cost per call in USD, used only to
-   feed the daily spend cap — see the audit report for how these were
-   estimated. They are deliberately a touch conservative.              */
+   `cost` is the WORST-CASE Orthogonal cost per call in USD — it's the
+   amount RESERVED against the daily cap up front (gate 5), so the cap can
+   never be *started* past. Routes whose real cost varies by which
+   providers fired (enrich, phone) reconcile to the ACTUAL cost by passing
+   it to `recordSpend(actual)` after the work; the rest record `cost`.   */
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const PER_STEP_DAILY_LIMIT = 10;
 const MIN_FORM_MS = 1500;
 
 export const STEPS = {
   search: { cost: 0.12, requireTiming: true, noun: "searches" },
-  alumni: { cost: 0.08, requireTiming: true, noun: "alumni lookups" },
-  enrich: { cost: 0.1, requireTiming: false, noun: "contact lookups" },
+  alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups" },
+  enrich: { cost: 0.37, requireTiming: false, noun: "contact lookups" },
   profile: { cost: 0.01, requireTiming: false, noun: "profile lookups" },
-  phone: { cost: 0.05, requireTiming: false, noun: "phone lookups" },
+  phone: { cost: 0.58, requireTiming: false, noun: "phone lookups" },
 } as const;
 
 export type StepName = keyof typeof STEPS;
@@ -40,7 +42,7 @@ export interface GuardBody {
 }
 
 type GuardResult =
-  | { ok: true; recordSpend: () => Promise<void> }
+  | { ok: true; recordSpend: (actualUsd?: number) => Promise<void> }
   | { ok: false; response: NextResponse };
 
 const BOT_UA =
@@ -184,5 +186,11 @@ export async function guardRequest(
     };
   }
 
-  return { ok: true, recordSpend: () => recordSpend(cfg.cost) };
+  // Reconcile to the real cost when the route knows it (varies by which
+  // providers fired); otherwise record the worst-case reservation.
+  return {
+    ok: true,
+    recordSpend: (actualUsd?: number) =>
+      recordSpend(typeof actualUsd === "number" && actualUsd >= 0 ? actualUsd : cfg.cost),
+  };
 }

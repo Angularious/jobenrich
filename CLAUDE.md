@@ -23,7 +23,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 ## Architecture / data flow
 
 **This is a public demo — no login.** Access is controlled by Level 1 abuse protections (audit-driven), all in `lib/security/`:
-- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Returns `recordSpend()` to call after the upstream work. Steps: `search`, `alumni`, `enrich`, `profile`, `phone` (each 10/day per visitor).
+- `guard.ts` — `guardRequest(request, body, step)` runs at the top of every API route before any Orthogonal call: same-origin + content-type check, obvious-bot UA filter, CSRF-style request-token verify, honeypot, minimum form-timing (form steps), global daily **spend cap** (503), then per-visitor **per-step rate limit** (429). Steps: `search`, `alumni`, `enrich`, `profile`, `phone` (each 10/day per visitor). **Spend-cap accounting:** each step's `cost` is the **worst-case** dollar cost — that's what the cap *reserves* up front (gate 5 checks `current + worstCase ≤ cap`, so work is never *started* past the cap). Routes whose real cost varies by which providers fired (`enrich`: Apollo→Bytemine→ContactOut; `phone`: Bytemine→ContactOut) tally the **actual** spend and pass it to `recordSpend(actual)` after the work; lower-variance steps record the estimate via `recordSpend()`. This keeps the cap a true ceiling without tripping early on the common (cheap) path.
 - `rateLimit.ts` / `spendCap.ts` — Supabase-backed when configured, in-memory otherwise. Both fail *degraded* to in-memory on any Supabase error. `guardRequest` is async; routes `await` it and `await guard.recordSpend()`.
 - `tokens.ts` + `app/api/init/route.ts` — issue/verify the signed request token (CSRF) and page-load stamp (timing).
 - `client.ts` — composite fingerprint builder + `apiPost()` + `errorMessage()`.
@@ -82,7 +82,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 
 ## Scaling / deployment
 
-Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan**, Supabase free. Fine for ~100 users. Public scale launch needs Vercel Pro ($20/mo) — Hobby is non-commercial-only.
+Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan**, Supabase free. Fine for ~100 users. Public scale launch needs Vercel Pro ($20/mo) — Hobby is non-commercial-only. `public/robots.txt` disallows all crawlers (public demo, not for indexing). No privacy/ToS pages, no Slack alerts.
 
 ## Key files
 

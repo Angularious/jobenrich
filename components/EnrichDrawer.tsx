@@ -33,6 +33,8 @@ interface EnrichDrawerProps {
   onClose: () => void;
   onGetPhone?: () => void;
   phoneLoading?: boolean;
+  phoneAttempted?: boolean; // a phone lookup already ran for this person (even if empty)
+  phoneError?: string | null;
 }
 
 function Band({ children }: { children: React.ReactNode }) {
@@ -51,6 +53,8 @@ export function EnrichDrawer({
   onClose,
   onGetPhone,
   phoneLoading,
+  phoneAttempted,
+  phoneError,
 }: EnrichDrawerProps) {
   const isOpen = person !== null;
 
@@ -176,7 +180,19 @@ export function EnrichDrawer({
                           </a>
                         ))}
                       </div>
-                    ) : phoneAvailable ? (
+                    ) : phoneError ? (
+                      // Lookup failed (rate limit / cap / network) — let them retry.
+                      <div>
+                        <p className="font-mono text-[11px] font-bold text-acc-pink mb-2">{phoneError}</p>
+                        <button
+                          onClick={onGetPhone}
+                          disabled={phoneLoading}
+                          className="nb-btn px-4 py-2 text-[11px] font-black uppercase tracking-wider"
+                        >
+                          {phoneLoading ? "Finding phone…" : "Try again →"}
+                        </button>
+                      </div>
+                    ) : phoneAvailable && !phoneAttempted ? (
                       <button
                         onClick={onGetPhone}
                         disabled={phoneLoading}
@@ -185,6 +201,7 @@ export function EnrichDrawer({
                         {phoneLoading ? "Finding phone…" : "Get phone →"}
                       </button>
                     ) : (
+                      // No phone signal, or we already looked and found none.
                       <p className="font-mono text-[11px] text-dim">No phone found.</p>
                     )}
                   </>

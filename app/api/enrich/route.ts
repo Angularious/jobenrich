@@ -256,9 +256,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid LinkedIn profile URL." }, { status: 400 });
   }
 
-  // Input is valid and a call will be made — count it against the daily cap.
-  await guard.recordSpend();
-
   // Cheap → rich → last-resort. Each step fires only if no email yet, and a
   // step that throws degrades to the next instead of failing the request.
   // Profile context, phones, and links accumulate across steps so an email
@@ -268,6 +265,11 @@ export async function POST(request: Request) {
     ["bytemine", bytemineLookup],
     ["contactout", contactOutLookup],
   ];
+  // Orthogonal charges per call attempted (even when it returns nothing), so
+  // we tally the real spend as providers fire and reconcile the cap to it.
+  const PROVIDER_COST: Record<EnrichSource, number> = {
+    apollo: 0.01, bytemine: 0.03, contactout: 0.33, none: 0,
+  };
 
   let company: string | null = null;
   let position: string | null = null;
@@ -275,58 +277,65 @@ export async function POST(request: Request) {
   let phones: string[] = [];
   let links: EnrichLink[] = [];
   let phoneSource: EnrichSource = "none";
+  let spentUsd = 0;
 
   const mergeLinks = (next: EnrichLink[]) => {
     const seen = new Set(links.map((l) => l.url));
     for (const l of next) if (!seen.has(l.url)) (seen.add(l.url), links.push(l));
   };
 
-  for (const [name, lookup] of steps) {
-    // ContactOut search already told us they have no email — skip the $0.33 reveal.
-    if (name === "contactout" && body.contactHint?.email === false) {
-      console.log("[enrich] contactout: skipped (contact_availability.email=false)");
-      continue;
-    }
-    let r: ProviderResult;
-    try {
-      r = await lookup(linkedinUrl);
-    } catch (err) {
-      if (err instanceof QuotaExceededError) {
-        return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+  try {
+    for (const [name, lookup] of steps) {
+      // ContactOut search already told us they have no email — skip the $0.33 reveal.
+      if (name === "contactout" && body.contactHint?.email === false) {
+        console.log("[enrich] contactout: skipped (contact_availability.email=false)");
+        continue;
       }
-      console.error(`[enrich] ${name} failed:`, err);
-      continue;
-    }
-    company = company ?? r.company;
-    position = position ?? r.position;
-    location = location ?? r.location;
-    if (r.phones.length && !phones.length) phoneSource = name;
-    phones = dedupe([...phones, ...r.phones]).slice(0, MAX_PHONES);
-    mergeLinks(r.links);
+      spentUsd += PROVIDER_COST[name]; // attempted → charged
+      let r: ProviderResult;
+      try {
+        r = await lookup(linkedinUrl);
+      } catch (err) {
+        if (err instanceof QuotaExceededError) {
+          return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+        }
+        console.error(`[enrich] ${name} failed:`, err);
+        continue;
+      }
+      company = company ?? r.company;
+      position = position ?? r.position;
+      location = location ?? r.location;
+      if (r.phones.length && !phones.length) phoneSource = name;
+      phones = dedupe([...phones, ...r.phones]).slice(0, MAX_PHONES);
+      mergeLinks(r.links);
 
-    if (r.emails.length) {
-      console.log(`[enrich] ${name}: email found`);
-      return NextResponse.json<EnrichResult>({
-        emails: r.emails,
-        phones,
-        source: name,
-        company,
-        position,
-        location,
-        links,
-      });
+      if (r.emails.length) {
+        console.log(`[enrich] ${name}: email found`);
+        return NextResponse.json<EnrichResult>({
+          emails: r.emails,
+          phones,
+          source: name,
+          company,
+          position,
+          location,
+          links,
+        });
+      }
     }
+
+    // No email from any provider — still return whatever context/phones we got.
+    console.log("[enrich] no email found");
+    return NextResponse.json<EnrichResult>({
+      emails: [],
+      phones,
+      source: phones.length || links.length ? phoneSource : "none",
+      company,
+      position,
+      location,
+      links,
+    });
+  } finally {
+    // Reconcile the daily cap to what we actually spent (gate reserved worst case).
+    await guard.recordSpend(spentUsd);
   }
-
-  // No email from any provider — still return whatever context/phones we got.
-  console.log("[enrich] no email found");
-  return NextResponse.json<EnrichResult>({
-    emails: [],
-    phones,
-    source: phones.length || links.length ? phoneSource : "none",
-    company,
-    position,
-    location,
-    links,
-  });
 }
