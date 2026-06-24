@@ -45,11 +45,11 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 
 **Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front. Keeps the full page (`LIMIT = 25`); UI shows 5 + "show more". Cards support Get contact / Pull Profile like people/recruiters.
 
-**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — **email only; the site never surfaces phone numbers (privacy decision)**:
-- Cheap→rich→last-resort email waterfall: **Apollo `/api/v1/people/match` ($0.01)** → **Bytemine `/contacts/enrich` ($0.03)** → **ContactOut `/v1/people/linkedin` ($0.33, `include_phone:false`)**.
-- Apollo's `email_status` is checked — `invalid`/`do_not_email`/`bounced`/`spam` primaries are dropped and the waterfall continues to Bytemine.
-- ContactOut step is **skipped entirely** when `contactHint.email=false` (already confirmed no data).
-- Returns `{ emails, source, company, position, location, links }`. Bytemine/ContactOut also return phone numbers in their payloads; the route deliberately **does not extract or return them**. (There is no phone route or "Get phone" UI.)
+**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — **email only; the site never surfaces phone numbers (privacy decision)**. Three providers: **Apollo `/api/v1/people/match` ($0.01, fast)**, **Bytemine `/contacts/enrich` ($0.03, but SLOW — ~18s email-finder, 25s timeout)**, **ContactOut `/v1/people/linkedin` ($0.33, fast, `include_phone:false`)**. Each step fires only if no email yet.
+- **Smart ordering by speed:** Apollo always first. When the search said ContactOut has the email (`contactHint.email === true`), order is Apollo → **ContactOut** (fast) → Bytemine — so we get the email in 1–3s instead of waiting ~18s on Bytemine. Otherwise Apollo → **Bytemine** (cheap) → ContactOut. (Bytemine *is* the only source for some contacts — it returns personal emails ContactOut lacks — so it stays in the chain.)
+- ContactOut step is **skipped entirely** when `contactHint.email=false` (search confirmed it has none → Bytemine is the only hope, slow but unavoidable).
+- Apollo's `email_status` is checked — `invalid`/`do_not_email`/`bounced`/`spam` primaries are dropped.
+- Returns `{ emails, source, company, position, location, links }`. Bytemine/ContactOut also return phone numbers in their payloads; the route deliberately **does not extract or return them**. (No phone route or "Get phone" UI.)
 
 **Pull Profile flow** (`PersonCard` "Pull Profile →" → `ProfileDrawer`):
 - **ContactOut results (~95%)**: uses `person.searchProfile` data already fetched in the $0.05 search — experience/education/bio strings parsed client-side. Zero extra cost. Instant, no loading state.

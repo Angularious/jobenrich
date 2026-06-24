@@ -250,15 +250,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid LinkedIn profile URL." }, { status: 400 });
   }
 
-  // Cheap → rich → last-resort. Each step fires only if no email yet, and a
-  // step that throws degrades to the next instead of failing the request.
-  // Profile context and links accumulate across steps so an email found late
-  // still carries any context an earlier step surfaced.
-  const steps: Array<[EnrichSource, (p: string) => Promise<ProviderResult>]> = [
-    ["apollo", apolloLookup],
-    ["bytemine", bytemineLookup],
-    ["contactout", contactOutLookup],
-  ];
+  // Each step fires only if no email yet; a step that throws degrades to the
+  // next. Profile context + links accumulate so an email found late still
+  // carries context an earlier step surfaced.
+  type Provider = "apollo" | "bytemine" | "contactout";
+  const lookups: Record<Provider, (p: string) => Promise<ProviderResult>> = {
+    apollo: apolloLookup,
+    bytemine: bytemineLookup,
+    contactout: contactOutLookup,
+  };
+  // Smart ordering by speed: Apollo ($0.01, fast) always first. Bytemine is
+  // CHEAP ($0.03) but SLOW (~18s email-finder), ContactOut is pricier ($0.33)
+  // but FAST (1–3s). So when the initial search already told us ContactOut has
+  // the email (`contactHint.email === true`), prefer it over the slow Bytemine.
+  // Otherwise try cheap Bytemine first. (ContactOut is skipped entirely below
+  // when the search said it has NO email — Bytemine is then the only hope.)
+  const order: Provider[] =
+    body.contactHint?.email === true
+      ? ["apollo", "contactout", "bytemine"]
+      : ["apollo", "bytemine", "contactout"];
   // Orthogonal charges per call attempted (even when it returns nothing), so
   // we tally the real spend as providers fire and reconcile the cap to it.
   const PROVIDER_COST: Record<EnrichSource, number> = {
@@ -277,7 +287,7 @@ export async function POST(request: Request) {
   };
 
   try {
-    for (const [name, lookup] of steps) {
+    for (const name of order) {
       // ContactOut search already told us they have no email — skip the $0.33 reveal.
       if (name === "contactout" && body.contactHint?.email === false) {
         console.log("[enrich] contactout: skipped (contact_availability.email=false)");
@@ -286,7 +296,7 @@ export async function POST(request: Request) {
       spentUsd += PROVIDER_COST[name]; // attempted → charged
       let r: ProviderResult;
       try {
-        r = await lookup(linkedinUrl);
+        r = await lookups[name](linkedinUrl);
       } catch (err) {
         if (err instanceof QuotaExceededError) {
           return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
