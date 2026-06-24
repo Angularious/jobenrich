@@ -237,8 +237,7 @@ export function findSimilarPeople(
   input: FinderInput & { jobTitle?: string }
 ): Promise<StepResult> {
   const { company, domain, jobTitle } = input;
-  const loc =
-    input.location && !isVirtualLocation(input.location) ? input.location : null;
+  const country = locationCountry(input.location);
   const LIMIT = 5;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<StepResult>> = [];
@@ -255,7 +254,7 @@ export function findSimilarPeople(
   // local or redundant — low value for the cost. Location stays on the primary
   // domain+title step where international noise matters most.
   if (domain && titles.length) {
-    if (loc) steps.push(() => co({ domain: [domain], job_title: titles, location: [loc] }));
+    if (country) steps.push(() => co({ domain: [domain], job_title: titles, location: [country] }));
     steps.push(() => co({ domain: [domain], job_title: titles }));
   }
   if (titles.length) {
@@ -274,19 +273,42 @@ function isVirtualLocation(loc: string): boolean {
   return /\b(remote|anywhere|worldwide|global|distributed|hybrid)\b/i.test(loc);
 }
 
+const US_HINT = /\b(united states|u\.?\s?s\.?\s?a?\.?|usa)\b/i;
+
+// Reduce a job location to a COUNTRY-level filter for ContactOut. Recruiters
+// (and similar-role people) at a company are spread across the country or work
+// remotely, so filtering by the exact city ("Boston, MA, United States") is too
+// narrow — it usually returns nobody and the waterfall then falls through to an
+// unfiltered step that surfaces international profiles. Country-level keeps
+// results in-region (e.g. US) while still matching across cities.
+//   "Boston, Massachusetts, United States" → "United States"
+//   "Hyderabad, Telangana, India"          → "India"
+//   "Remote"                                → null (no usable place)
+function locationCountry(loc: string | null | undefined): string | null {
+  if (!loc) return null;
+  const t = loc.trim();
+  if (!t || isVirtualLocation(t)) return null;
+  if (US_HINT.test(t)) return "United States";
+  // "City, Region, Country" → the last comma-segment is the country. A bare
+  // city with no country is too ambiguous to country-ify, so skip filtering.
+  const parts = t.split(",").map((s) => s.trim()).filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 1] : null;
+}
+
 // Recruiters / talent at the company — target 3. Domain-first, same as the
 // people finder: match recruiters at the exact domain first, then fall back to
 // the company name + Coresignal only if that found nobody (so an imperfect
 // domain no longer means an empty recruiter list).
 //
-// When a job location is known (e.g. "Boston, MA, United States"), each
-// ContactOut step is tried WITH the location filter first — if that returns
-// nobody the waterfall falls through to the same step without the filter, so
-// a too-specific location never blocks results entirely.
+// When the job's COUNTRY is known (e.g. "United States"), each ContactOut step
+// is tried WITH the country filter first — recruiters are spread across the
+// country/remote, so a country filter (not the exact city) keeps results
+// in-region without missing everyone. If a country-filtered step returns
+// nobody the waterfall falls through to the same step unfiltered, so a role in
+// a country ContactOut doesn't index well never blocks results entirely.
 export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const { company, domain } = input;
-  const loc =
-    input.location && !isVirtualLocation(input.location) ? input.location : null;
+  const country = locationCountry(input.location);
   const LIMIT = 3;
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
@@ -294,11 +316,12 @@ export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null }));
 
+  // Domain-first; within each, country-filtered before unfiltered.
   if (domain) {
-    if (loc) steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES, location: [loc] }));
+    if (country) steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES, location: [country] }));
     steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES }));
   }
-  if (loc) steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES, location: [loc] }));
+  if (country) steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES, location: [country] }));
   steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES }));
   steps.push(() => cs({ experience_company_name: company, experience_title: "Recruiter" }));
   steps.push(() => cs({ experience_company_name: company }));
