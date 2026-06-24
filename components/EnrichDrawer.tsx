@@ -74,6 +74,11 @@ export function EnrichDrawer({
   const hasContact = hasEmails || hasPhones;
   const hasProfile = Boolean(data?.company || data?.location || hasLinks);
   const nothing = !loading && !error && data && !hasContact && !hasProfile;
+  // When the email came from ContactOut, that step was a full reveal
+  // (include_phone:true) — the phone is already as resolved as it gets, so we
+  // don't offer a separate "Get phone" call. Otherwise ContactOut never ran,
+  // so the phone fallback is still worth offering.
+  const phoneResolvedByEnrich = data?.source === "contactout";
 
   return (
     <>
@@ -177,6 +182,10 @@ export function EnrichDrawer({
                           </a>
                         ))}
                       </div>
+                    ) : phoneResolvedByEnrich ? (
+                      // ContactOut already did a full reveal (incl. phone) when it
+                      // found the email — nothing more to fetch.
+                      <p className="font-mono text-[11px] text-dim">No phone found.</p>
                     ) : !phoneAttempted ? (
                       // One-shot: the ContactOut fallback costs $0.55, so we
                       // look up a phone at most once per person. Note the cost.

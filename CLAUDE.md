@@ -46,15 +46,16 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 **Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front.
 
 **Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`):
-- Cheap→rich→last-resort email waterfall: **Apollo `/api/v1/people/match` ($0.01)** → **Bytemine `/contacts/enrich` ($0.03)** → **ContactOut `/v1/people/linkedin` ($0.33, `include_phone:false`)**.
+- Cheap→rich→last-resort email waterfall: **Apollo `/api/v1/people/match` ($0.01)** → **Bytemine `/contacts/enrich` ($0.03)** → **ContactOut `/v1/people/linkedin` ($0.55, `include_phone:true`)**.
+- The ContactOut last step uses `include_phone:true` **on purpose**: if Apollo and Bytemine both missed the email, we're already paying ContactOut's reveal, so we grab the phone in the same call — the user never needs a separate $0.55 phone lookup. (When ContactOut *isn't* reached because Apollo/Bytemine found the email, the phone fallback is offered separately — see Phone flow.)
 - Apollo's `email_status` is checked — `invalid`/`do_not_email`/`bounced`/`spam` primaries are dropped and the waterfall continues to Bytemine.
 - ContactOut step is **skipped entirely** when `contactHint.email=false` (already confirmed no data).
-- Phones come from Bytemine (fires when Apollo has no email) or the separate phone route. If Apollo finds email first, phones are NOT automatically fetched — see Phone flow below.
+- Phones come from Bytemine (fires when Apollo has no email) or the ContactOut last step (incl. phone). If Apollo finds email first, no phone is fetched automatically — the "Get phone" button handles that on demand.
 
 **Phone flow** (`EnrichDrawer` "Get phone →" → `app/api/phone/route.ts`) — explicit, **strict one-shot per person per session** (the ContactOut fallback is $0.55, so the client marks the URL checked in a `finally` — success, empty, or error — and the button never returns; no retry affordance):
 - Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback, only if Bytemine found no phone).
 - **Both providers return emails too**, so the route returns `{ phones, emails }` and the client merges any new emails into `EnrichData.emails` — the $0.55 reveal pays for itself instead of discarding its emails.
-- The "Get phone →" button is offered for everyone (NOT gated on the ContactOut search signal, which has cross-provider false negatives); after the one lookup it shows the phone(s), "No phone found.", or the error.
+- The button is offered whenever the enrich email source was **not** ContactOut (`data.source !== "contactout"`). If the email *came from* ContactOut, that enrich step already revealed the phone (`include_phone:true`), so no button is shown — we don't pay twice. After the one lookup it shows the phone(s), "No phone found.", or the error.
 
 **Pull Profile flow** (`PersonCard` "Pull Profile →" → `ProfileDrawer`):
 - **ContactOut results (~95%)**: uses `person.searchProfile` data already fetched in the $0.05 search — experience/education/bio strings parsed client-side. Zero extra cost. Instant, no loading state.
@@ -73,10 +74,10 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - **Search total:** LinkedIn ~$0.19 best / ~$0.45 worst · Greenhouse/careers ~$0.12 best / ~$0.41 worst
 - **Alumni:** $0.05 → $0.10 worst (domain fallback)
 - **Pull Profile:** $0 for ContactOut results (already in search data) · $0.01 Apollo for Coresignal results
-- **Enrich (email):** $0.01 Apollo → $0.04 Bytemine fallback → $0.37 worst (ContactOut)
+- **Enrich (email + phone if ContactOut runs):** $0.01 Apollo → $0.04 Bytemine fallback → $0.59 worst (ContactOut incl. phone, which also resolves the phone so no separate phone call)
 - **Phone (explicit):** $0.03 Bytemine → $0.58 worst (Bytemine miss + ContactOut $0.55)
-- **Enrich all 8 returned:** ~$0.08 best (all Apollo) → ~$2.96 worst (all ContactOut)
-- **Full session:** ~$0.20–0.27 typical · ~$3.2 absolute worst
+- **Enrich all 8 returned:** ~$0.08 best (all Apollo) → ~$4.72 worst (all hit ContactOut incl. phone)
+- **Full session:** ~$0.20–0.27 typical · ~$5.3 absolute worst (search + 8 ContactOut enrich-with-phone). Bounded per visitor by the 10/step/day rate limit; the $40 global cap reserves each step's worst case.
 
 > ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` — always pass `reveal_info: false`. `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33` — enrich route uses `false`; phone route uses `true`. ScrapeGraphAI stealth adds +$0.025.
 

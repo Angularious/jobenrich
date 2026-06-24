@@ -18,7 +18,7 @@ const MIN_FORM_MS = 1500;
 export const STEPS = {
   search: { cost: 0.12, requireTiming: true, noun: "searches" },
   alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups" },
-  enrich: { cost: 0.37, requireTiming: false, noun: "contact lookups" },
+  enrich: { cost: 0.59, requireTiming: false, noun: "contact lookups" }, // worst: Apollo .01 + Bytemine .03 + ContactOut incl. phone .55
   profile: { cost: 0.01, requireTiming: false, noun: "profile lookups" },
   phone: { cost: 0.58, requireTiming: false, noun: "phone lookups" },
 } as const;

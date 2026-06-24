@@ -206,14 +206,16 @@ async function bytemineLookup(profile: string): Promise<ProviderResult> {
   };
 }
 
-/* Step 3 — ContactOut /v1/people/linkedin ($0.33, no phone). Categorized
-   emails + github links, but no name/title/company. Last resort. */
+/* Step 3 — ContactOut /v1/people/linkedin ($0.55, WITH phone). Categorized
+   emails + phone + github links. Last resort for email — and since we're
+   already paying ContactOut's reveal here, we ask for the phone too
+   (include_phone:true) so the user never needs a separate $0.55 phone call. */
 async function contactOutLookup(profile: string): Promise<ProviderResult> {
   const raw = await callOrthogonal<Record<string, unknown>>({
     api: "contactout",
     path: "/v1/people/linkedin",
     method: "GET",
-    query: { profile, include_phone: false },
+    query: { profile, include_phone: true },
   });
   // ContactOut nests contact data under `profile` on some responses.
   const root = (raw?.profile as Record<string, unknown>) ?? raw ?? {};
@@ -273,7 +275,7 @@ export async function POST(request: Request) {
   // Orthogonal charges per call attempted (even when it returns nothing), so
   // we tally the real spend as providers fire and reconcile the cap to it.
   const PROVIDER_COST: Record<EnrichSource, number> = {
-    apollo: 0.01, bytemine: 0.03, contactout: 0.33, none: 0,
+    apollo: 0.01, bytemine: 0.03, contactout: 0.55, none: 0, // ContactOut incl. phone
   };
 
   let company: string | null = null;
