@@ -238,7 +238,9 @@ export function findSimilarPeople(
 ): Promise<StepResult> {
   const { company, domain, jobTitle } = input;
   const country = locationCountry(input.location);
-  const LIMIT = 5;
+  // ContactOut returns a page of up to ~25 profiles for the same flat $0.05, so
+  // we keep the whole page (the UI shows 5 + a "show more"). No extra cost.
+  const LIMIT = 25;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
@@ -309,7 +311,8 @@ function locationCountry(loc: string | null | undefined): string | null {
 export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const { company, domain } = input;
   const country = locationCountry(input.location);
-  const LIMIT = 3;
+  // Keep the full page (flat $0.05); UI shows 5 + "show more".
+  const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
     contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));

@@ -550,7 +550,9 @@ export default function Home() {
               );
             })()}
 
+            {/* key per session so the "show more" reveal resets when switching tabs */}
             <ResultsSection
+              key={`people-${activeSession.id}`}
               title="People to talk to"
               hint="at the company"
               people={activeSession.results.people}
@@ -563,6 +565,7 @@ export default function Home() {
               emptyMessage="No matching people surfaced for this company yet. Try a broader role, or check the recruiters below."
             />
             <ResultsSection
+              key={`recruiters-${activeSession.id}`}
               title="Recruiters"
               hint="hiring now"
               people={activeSession.results.recruiters}
