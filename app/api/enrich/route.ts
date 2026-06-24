@@ -206,16 +206,18 @@ async function bytemineLookup(profile: string): Promise<ProviderResult> {
   };
 }
 
-/* Step 3 — ContactOut /v1/people/linkedin ($0.55, WITH phone). Categorized
-   emails + phone + github links. Last resort for email — and since we're
-   already paying ContactOut's reveal here, we ask for the phone too
-   (include_phone:true) so the user never needs a separate $0.55 phone call. */
-async function contactOutLookup(profile: string): Promise<ProviderResult> {
+/* Step 3 — ContactOut /v1/people/linkedin. Last resort for email. When we're
+   already paying ContactOut's reveal AND the initial search said it has a phone
+   (or didn't say), we ask for the phone too (include_phone:true → $0.55) so the
+   user never needs a separate phone call. If the search said ContactOut has NO
+   phone, we use include_phone:false ($0.33) — no point paying for a phone that
+   isn't there. */
+async function contactOutLookup(profile: string, includePhone: boolean): Promise<ProviderResult> {
   const raw = await callOrthogonal<Record<string, unknown>>({
     api: "contactout",
     path: "/v1/people/linkedin",
     method: "GET",
-    query: { profile, include_phone: true },
+    query: { profile, include_phone: includePhone },
   });
   // ContactOut nests contact data under `profile` on some responses.
   const root = (raw?.profile as Record<string, unknown>) ?? raw ?? {};
@@ -267,15 +269,18 @@ export async function POST(request: Request) {
   // step that throws degrades to the next instead of failing the request.
   // Profile context, phones, and links accumulate across steps so an email
   // found late still carries any context an earlier step surfaced.
+  // If the initial search said ContactOut has a phone (or didn't say), grab it
+  // in the same reveal; if it said there's none, use the cheaper email-only tier.
+  const coWantsPhone = body.contactHint?.phone !== false;
   const steps: Array<[EnrichSource, (p: string) => Promise<ProviderResult>]> = [
     ["apollo", apolloLookup],
     ["bytemine", bytemineLookup],
-    ["contactout", contactOutLookup],
+    ["contactout", (p) => contactOutLookup(p, coWantsPhone)],
   ];
   // Orthogonal charges per call attempted (even when it returns nothing), so
   // we tally the real spend as providers fire and reconcile the cap to it.
   const PROVIDER_COST: Record<EnrichSource, number> = {
-    apollo: 0.01, bytemine: 0.03, contactout: 0.55, none: 0, // ContactOut incl. phone
+    apollo: 0.01, bytemine: 0.03, contactout: coWantsPhone ? 0.55 : 0.33, none: 0,
   };
 
   let company: string | null = null;

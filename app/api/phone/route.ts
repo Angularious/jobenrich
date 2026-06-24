@@ -88,7 +88,12 @@ async function contactOutContact(profile: string): Promise<ContactBits> {
 }
 
 export async function POST(request: Request) {
-  let body: GuardBody & { linkedinUrl?: string };
+  let body: GuardBody & {
+    linkedinUrl?: string;
+    // From the initial ContactOut search. When phone=false, ContactOut has no
+    // phone for this person, so skip its $0.55 reveal even if Bytemine misses.
+    contactHint?: { email: boolean; phone: boolean } | null;
+  };
   try {
     body = await request.json();
   } catch {
@@ -123,9 +128,11 @@ export async function POST(request: Request) {
       console.error("[phone] Bytemine failed:", err);
     }
 
-    // ContactOut fallback ($0.55) — only when Bytemine found no phone. Returns
-    // emails too, which we merge so the $0.55 isn't wasted on phones alone.
-    if (!phones.length) {
+    // ContactOut fallback ($0.55) — only when Bytemine found no phone AND the
+    // initial search didn't already tell us ContactOut has none (phone=false).
+    // ContactOut reports its own data, so phone=false means its reveal would be
+    // empty — skip the $0.55 and save it. Returns emails too, which we merge.
+    if (!phones.length && body.contactHint?.phone !== false) {
       try {
         spentUsd += 0.55;
         const r = await contactOutContact(linkedinUrl);
@@ -138,6 +145,8 @@ export async function POST(request: Request) {
         }
         console.error("[phone] ContactOut failed:", err);
       }
+    } else if (!phones.length) {
+      console.log("[phone] ContactOut: skipped (contact_availability.phone=false)");
     }
 
     return NextResponse.json<PhoneResult>({ phones, emails });

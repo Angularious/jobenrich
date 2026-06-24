@@ -298,7 +298,12 @@ export default function Home() {
     try {
       const r = await apiPost<{ phones: string[]; emails?: string[]; error?: string }>(
         "/api/phone",
-        { linkedinUrl: url }
+        {
+          linkedinUrl: url,
+          ...(enrichTarget.searchProfile?.contactAvailability != null
+            ? { contactHint: enrichTarget.searchProfile.contactAvailability }
+            : {}),
+        }
       );
       if (!r.ok) {
         setPhoneError(errorMessage(r, "Couldn't complete the phone lookup."));

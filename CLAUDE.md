@@ -47,13 +47,13 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 
 **Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`):
 - Cheap→rich→last-resort email waterfall: **Apollo `/api/v1/people/match` ($0.01)** → **Bytemine `/contacts/enrich` ($0.03)** → **ContactOut `/v1/people/linkedin` ($0.55, `include_phone:true`)**.
-- The ContactOut last step uses `include_phone:true` **on purpose**: if Apollo and Bytemine both missed the email, we're already paying ContactOut's reveal, so we grab the phone in the same call — the user never needs a separate $0.55 phone lookup. (When ContactOut *isn't* reached because Apollo/Bytemine found the email, the phone fallback is offered separately — see Phone flow.)
+- The ContactOut last step uses `include_phone:true` **on purpose**: if Apollo and Bytemine both missed the email, we're already paying ContactOut's reveal, so we grab the phone in the same call ($0.55) — the user never needs a separate phone lookup. **Exception:** if the initial search said ContactOut has no phone (`contactHint.phone === false`), it uses `include_phone:false` ($0.33) — no point paying the phone tier for a phone that isn't there. (When ContactOut *isn't* reached because Apollo/Bytemine found the email, the phone fallback is offered separately — see Phone flow.)
 - Apollo's `email_status` is checked — `invalid`/`do_not_email`/`bounced`/`spam` primaries are dropped and the waterfall continues to Bytemine.
 - ContactOut step is **skipped entirely** when `contactHint.email=false` (already confirmed no data).
 - Phones come from Bytemine (fires when Apollo has no email) or the ContactOut last step (incl. phone). If Apollo finds email first, no phone is fetched automatically — the "Get phone" button handles that on demand.
 
 **Phone flow** (`EnrichDrawer` "Get phone →" → `app/api/phone/route.ts`) — explicit, **strict one-shot per person per session** (the ContactOut fallback is $0.55, so the client marks the URL checked in a `finally` — success, empty, or error — and the button never returns; no retry affordance):
-- Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback, only if Bytemine found no phone).
+- Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback, only if Bytemine found no phone **and** `contactHint.phone !== false`). If the initial search flagged ContactOut as having no phone, the $0.55 fallback is skipped — Bytemine still runs (different DB, may have it), but we don't pay ContactOut for a phone it already told us it lacks.
 - **Both providers return emails too**, so the route returns `{ phones, emails }` and the client merges any new emails into `EnrichData.emails` — the $0.55 reveal pays for itself instead of discarding its emails.
 - The button is offered whenever the enrich email source was **not** ContactOut (`data.source !== "contactout"`). If the email *came from* ContactOut, that enrich step already revealed the phone (`include_phone:true`), so no button is shown — we don't pay twice. After the one lookup it shows the phone(s), "No phone found.", or the error.
 
