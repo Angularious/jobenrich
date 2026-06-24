@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   await guard.recordSpend();
 
   try {
-    const alumni = await findAlumni({ company, domain, school });
+    const { people: alumni } = await findAlumni({ company, domain, school });
     return NextResponse.json({ alumni, alumniError: false });
   } catch (err) {
     if (err instanceof QuotaExceededError) {

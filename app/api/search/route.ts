@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   );
 
   // Step 2: Two waterfalls in parallel — people in similar roles + recruiters.
-  const [similar, recruiters] = await Promise.allSettled([
+  const [similar, recruitersResult] = await Promise.allSettled([
     findSimilarPeople({
       company: companyName,
       domain,
@@ -73,13 +73,18 @@ export async function POST(request: Request) {
     findRecruiters({ company: companyName, domain, location: jobLocation }),
   ]);
 
+  const companyMeta =
+    (similar.status === "fulfilled" ? similar.value.companyMeta : null) ??
+    (recruitersResult.status === "fulfilled" ? recruitersResult.value.companyMeta : null);
+
   return NextResponse.json({
     jobTitle,
     company: companyName,
     domain,
-    people: similar.status === "fulfilled" ? similar.value : [],
+    companyMeta,
+    people: similar.status === "fulfilled" ? similar.value.people : [],
     peopleError: similar.status === "rejected",
-    recruiters: recruiters.status === "fulfilled" ? recruiters.value : [],
-    recruitersError: recruiters.status === "rejected",
+    recruiters: recruitersResult.status === "fulfilled" ? recruitersResult.value.people : [],
+    recruitersError: recruitersResult.status === "rejected",
   });
 }

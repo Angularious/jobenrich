@@ -8,7 +8,9 @@ import { AlumniFinder } from "@/components/AlumniFinder";
 import { SampleResults } from "@/components/SampleResults";
 import { HiringAd } from "@/components/HiringAd";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
-import { ProfileDrawer, ProfileData } from "@/components/ProfileDrawer";
+import { ProfileDrawer, ProfileData, ProfileJob, ProfileEducation } from "@/components/ProfileDrawer";
+import type { SearchProfile } from "@/components/PersonCard";
+import type { CompanyMeta } from "@/lib/people";
 import { PipelineProgress } from "@/components/PipelineProgress";
 import { SessionTabs } from "@/components/SessionTabs";
 import { BuilderDrawer } from "@/components/BuilderDrawer";
@@ -18,6 +20,7 @@ interface SearchResults {
   jobTitle: string | null;
   company: string;
   domain: string | null;
+  companyMeta: CompanyMeta | null;
   people: PersonData[];
   peopleError: boolean;
   recruiters: PersonData[];
@@ -77,6 +80,46 @@ function exportCSV(session: SearchSession, enrichCache: Record<string, EnrichDat
   URL.revokeObjectURL(url);
 }
 
+// Parse ContactOut's formatted experience string into a structured job entry.
+// Format: "Title at Company in YYYY - YYYY/Present"
+function parseExpStr(s: string): ProfileJob | null {
+  const m = s.match(/^(.+?)\s+at\s+(.+?)\s+in\s+(\d{4})\s+-\s+(\d{4}|Present)$/i);
+  if (!m) return null;
+  const current = m[4].toLowerCase() === "present";
+  return {
+    title: m[1].trim(),
+    company: m[2].trim(),
+    startYear: parseInt(m[3]),
+    endYear: current ? null : parseInt(m[4]),
+    current,
+  };
+}
+
+// Parse ContactOut's formatted education string into a structured entry.
+// Format: "Degree at School in YYYY - YYYY"
+function parseEduStr(s: string): ProfileEducation | null {
+  const m = s.match(/^(.+?)\s+at\s+(.+?)\s+in\s+(\d{4})\s+-\s+(\d{4})$/);
+  if (!m) return null;
+  return {
+    school: m[2].trim(),
+    degree: m[1].trim() || null,
+    field: null,
+    endYear: parseInt(m[4]),
+  };
+}
+
+// Convert a ContactOut searchProfile (free, already fetched) into ProfileData.
+function profileFromSearch(sp: SearchProfile): ProfileData {
+  return {
+    bio: sp.bio,
+    photo: null,
+    jobs: sp.experience.map(parseExpStr).filter((j): j is ProfileJob => j !== null).slice(0, 4),
+    education: sp.education.map(parseEduStr).filter((e): e is ProfileEducation => e !== null).slice(0, 5),
+    skills: [],
+    links: [],
+  };
+}
+
 export default function Home() {
   const [jobUrl, setJobUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -131,6 +174,7 @@ export default function Home() {
   const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [phoneLoading, setPhoneLoading] = useState(false);
 
   const enrichedUrls = new Set(Object.keys(enrichCache));
 
@@ -141,6 +185,14 @@ export default function Home() {
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const profiledUrls = new Set(Object.keys(profileCache));
+
+  const [companyInfoOpen, setCompanyInfoOpen] = useState(false);
+  // Reset dropdown when switching tabs.
+  const prevActiveId = useRef(activeId);
+  if (prevActiveId.current !== activeId) {
+    prevActiveId.current = activeId;
+    if (companyInfoOpen) setCompanyInfoOpen(false);
+  }
 
   useEffect(() => {
     primeSecurity();
@@ -204,6 +256,9 @@ export default function Home() {
     try {
       const r = await apiPost<EnrichData & { error?: string }>("/api/enrich", {
         linkedinUrl: person.linkedinUrl,
+        ...(person.searchProfile?.contactAvailability != null
+          ? { contactHint: person.searchProfile.contactAvailability }
+          : {}),
       });
       if (!r.ok) {
         setEnrichError(errorMessage(r, "Enrichment failed. Try again."));
@@ -225,6 +280,28 @@ export default function Home() {
     setEnrichError(null);
   }
 
+  async function handleGetPhone() {
+    if (!enrichTarget) return;
+    setPhoneLoading(true);
+    try {
+      const r = await apiPost<{ phones: string[]; error?: string }>("/api/phone", {
+        linkedinUrl: enrichTarget.linkedinUrl,
+      });
+      if (!r.ok) return;
+      const phones = r.data.phones ?? [];
+      // Merge phones into the open drawer data and the cache.
+      setEnrichData((prev) => (prev ? { ...prev, phones } : prev));
+      setEnrichCache((prev) => {
+        const existing = prev[enrichTarget.linkedinUrl];
+        return existing
+          ? { ...prev, [enrichTarget.linkedinUrl]: { ...existing, phones } }
+          : prev;
+      });
+    } finally {
+      setPhoneLoading(false);
+    }
+  }
+
   async function handleProfile(person: PersonData) {
     setProfileTarget(person);
     setProfileError(null);
@@ -236,6 +313,17 @@ export default function Home() {
       return;
     }
 
+    // ContactOut search already includes experience/education/bio at no extra
+    // cost. Use it directly — no API call needed for ContactOut results.
+    if (person.searchProfile) {
+      const result = profileFromSearch(person.searchProfile);
+      setProfileData(result);
+      setProfileLoading(false);
+      setProfileCache((prev) => ({ ...prev, [person.linkedinUrl]: result }));
+      return;
+    }
+
+    // Coresignal results have no searchProfile — fall back to Apollo ($0.01).
     setProfileData(null);
     setProfileLoading(true);
     try {
@@ -304,7 +392,7 @@ export default function Home() {
         </h2>
 
         <p className="font-mono font-bold text-sm text-center text-dim mb-6">
-          LinkedIn won&apos;t give you the recruiter&apos;s email. We will.
+          LinkedIn won&apos;t give you their contact. We will.
         </p>
 
         <SearchForm
@@ -345,18 +433,80 @@ export default function Home() {
 
         {activeSession && (
           <>
-            {/* Job banner */}
-            <div className="nb-flat mt-6 bg-panel px-4 py-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="font-mono text-[11px] text-dim uppercase tracking-widest">
-                hiring for
-              </span>
-              <span className="font-black text-sm text-ink">
-                {activeSession.results.jobTitle || "Role"}
-              </span>
-              <span className="font-bold text-acc-red text-sm">
-                @ {activeSession.results.company}
-              </span>
-            </div>
+            {/* Job banner + company context */}
+            {(() => {
+              const meta = activeSession.results.companyMeta;
+              const hasInfo = meta && (meta.overview || meta.size || meta.hq || meta.founded);
+              return (
+                <div className="nb-flat mt-6 bg-panel">
+                  <div className="px-4 py-3 flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      {/* Company logo */}
+                      {meta?.logoUrl && (
+                        <div className="flex-none w-9 h-9 sm:w-10 sm:h-10 border-[2px] border-line bg-base overflow-hidden flex items-center justify-center mt-0.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={meta.logoUrl}
+                            alt={activeSession.results.company}
+                            className="w-full h-full object-contain p-0.5"
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                          />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-black text-base sm:text-lg text-ink leading-tight truncate">
+                          {activeSession.results.jobTitle || "Role"}
+                        </p>
+                        <p className="font-bold text-sm text-acc-red mt-0.5">
+                          {activeSession.results.company}
+                        </p>
+                      </div>
+                    </div>
+                    {hasInfo && (
+                      <button
+                        onClick={() => setCompanyInfoOpen((v) => !v)}
+                        className="flex-none mt-1 font-mono text-[10px] font-bold text-dim uppercase tracking-widest hover:text-ink whitespace-nowrap"
+                      >
+                        {companyInfoOpen ? "▲ less" : "▼ about"}
+                      </button>
+                    )}
+                  </div>
+                  {companyInfoOpen && meta && (
+                    <div className="border-t-[2px] border-line px-4 py-3">
+                      {meta.overview && (
+                        <p className="font-mono text-[11px] text-ink leading-relaxed mb-2">
+                          {meta.overview.length > 200 ? meta.overview.slice(0, 200) + "…" : meta.overview}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {meta.size && (
+                          <span className="font-mono text-[10px] font-bold text-dim uppercase tracking-wide">
+                            {meta.size.toLocaleString()}+ employees
+                          </span>
+                        )}
+                        {meta.hq && (
+                          <span className="font-mono text-[10px] font-bold text-dim uppercase tracking-wide">
+                            HQ · {meta.hq}
+                          </span>
+                        )}
+                        {meta.founded && (
+                          <span className="font-mono text-[10px] font-bold text-dim uppercase tracking-wide">
+                            Est. {meta.founded}
+                          </span>
+                        )}
+                        {meta.revenue && meta.revenue >= 1_000_000 && (
+                          <span className="font-mono text-[10px] font-bold text-dim uppercase tracking-wide">
+                            ~${meta.revenue >= 1_000_000_000
+                              ? (meta.revenue / 1_000_000_000).toFixed(1) + "B"
+                              : Math.round(meta.revenue / 1_000_000) + "M"} revenue
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <ResultsSection
               title="People to talk to"
@@ -412,6 +562,8 @@ export default function Home() {
         loading={enrichLoading}
         error={enrichError}
         onClose={closeDrawer}
+        onGetPhone={handleGetPhone}
+        phoneLoading={phoneLoading}
       />
 
       <ProfileDrawer

@@ -31,6 +31,8 @@ interface EnrichDrawerProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onGetPhone?: () => void;
+  phoneLoading?: boolean;
 }
 
 function Band({ children }: { children: React.ReactNode }) {
@@ -41,7 +43,15 @@ function Band({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDrawerProps) {
+export function EnrichDrawer({
+  person,
+  data,
+  loading,
+  error,
+  onClose,
+  onGetPhone,
+  phoneLoading,
+}: EnrichDrawerProps) {
   const isOpen = person !== null;
 
   useEffect(() => {
@@ -54,9 +64,15 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
   const emails = data?.emails ?? [];
   const phones = data?.phones ?? [];
   const links = data?.links ?? [];
-  const hasContact = emails.length > 0 || phones.length > 0;
-  const hasProfile = Boolean(data?.company || data?.location || links.length > 0);
+  const hasEmails = emails.length > 0;
+  const hasPhones = phones.length > 0;
+  const hasLinks = links.length > 0;
+  const hasContact = hasEmails || hasPhones;
+  const hasProfile = Boolean(data?.company || data?.location || hasLinks);
   const nothing = !loading && !error && data && !hasContact && !hasProfile;
+
+  // ContactOut already told us if they have a phone in the search response.
+  const phoneAvailable = person?.searchProfile?.contactAvailability?.phone === true;
 
   return (
     <>
@@ -126,9 +142,10 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
               </div>
 
               <div className="px-6">
-                {hasContact && (
+                {/* Email section */}
+                {hasEmails && (
                   <>
-                    <Band>■ Contact</Band>
+                    <Band>■ Email</Band>
                     <div className="space-y-2">
                       {emails.map((email) => (
                         <a
@@ -139,20 +156,42 @@ export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDr
                           {email}
                         </a>
                       ))}
-                      {phones.map((phone) => (
-                        <a
-                          key={phone}
-                          href={`tel:${phone}`}
-                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base"
-                        >
-                          {phone}
-                        </a>
-                      ))}
                     </div>
                   </>
                 )}
 
-                {links.length > 0 && (
+                {/* Phone section — always shown once we have an email */}
+                {hasEmails && (
+                  <>
+                    <Band>■ Phone</Band>
+                    {hasPhones ? (
+                      <div className="space-y-2">
+                        {phones.map((phone) => (
+                          <a
+                            key={phone}
+                            href={`tel:${phone}`}
+                            className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base"
+                          >
+                            {phone}
+                          </a>
+                        ))}
+                      </div>
+                    ) : phoneAvailable ? (
+                      <button
+                        onClick={onGetPhone}
+                        disabled={phoneLoading}
+                        className="nb-btn px-4 py-2 text-[11px] font-black uppercase tracking-wider"
+                      >
+                        {phoneLoading ? "Finding phone…" : "Get phone →"}
+                      </button>
+                    ) : (
+                      <p className="font-mono text-[11px] text-dim">No phone found.</p>
+                    )}
+                  </>
+                )}
+
+                {/* Links */}
+                {hasLinks && (
                   <>
                     <Band>■ Around the web</Band>
                     <div className="space-y-2">

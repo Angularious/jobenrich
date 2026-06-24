@@ -225,6 +225,39 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
   };
 }
 
+// Free fallback: parse OG/page title from Serper metadata before paying for
+// LLM extraction. Handles "Job Title at Company [| ATS]" patterns common on
+// Lever, some company career pages, and similar ATSes.
+function fromOgMeta(
+  meta: Record<string, unknown> | undefined,
+  pageUrl: string
+): ResolvedJob | null {
+  if (!meta) return null;
+  // Serper may use ogTitle or og:title depending on version.
+  const raw =
+    (meta.ogTitle as unknown) ??
+    (meta["og:title"] as unknown) ??
+    (meta.title as unknown);
+  const title = clean(raw);
+  if (!title || title.length < 6) return null;
+
+  // Match "Job Title at Company [| ATS …]" — very common on Lever, Ashby, etc.
+  const m = title.match(/^(.+?)\s+at\s+([A-Za-z][\w\s&,.'"-]{1,50}?)(?:\s*[\|–\-].*)?$/);
+  if (!m) return null;
+  const jobTitle = m[1].trim();
+  const company = m[2].trim();
+  if (!company || company.length < 2) return null;
+  const normalized = normalizeCompany(company);
+  if (!normalized) return null;
+  return {
+    jobTitle,
+    companyName: normalized,
+    domain: pickDomain(null, pageUrl),
+    jobLocation: null,
+    source: "llm",
+  };
+}
+
 async function resolveGeneric(url: string): Promise<ResolvedJob> {
   const page = await callOrthogonal<SerperResponse>({
     api: "serper-scrape",
@@ -233,14 +266,22 @@ async function resolveGeneric(url: string): Promise<ResolvedJob> {
     body: { url, includeMarkdown: true },
   });
 
-  // Prefer structured JSON-LD when the page provides it (free + reliable).
+  // Step 1 (free): structured JSON-LD — most reliable when present.
   const ld = findJobPosting(page?.jsonld);
   if (ld) {
     const resolved = fromJsonLd(ld, url);
     if (resolved?.companyName) return resolved;
   }
 
-  // Otherwise let the LLM read the rendered markdown.
+  // Step 2 (free): OG/page title heuristic — saves $0.025 for common ATS
+  // patterns ("Title at Company | Lever") when JSON-LD is absent.
+  const ogResolved = fromOgMeta(page?.metadata as Record<string, unknown> | undefined, url);
+  if (ogResolved?.companyName) {
+    console.log(`[search] OG meta fallback: "${ogResolved.jobTitle}" @ "${ogResolved.companyName}"`);
+    return ogResolved;
+  }
+
+  // Step 3 ($0.025): LLM reads the rendered markdown — handles everything else.
   const md = page?.markdown || page?.text;
   if (md && md.trim()) {
     const resolved = await llmExtract(md, url);

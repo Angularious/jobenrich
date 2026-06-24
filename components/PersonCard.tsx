@@ -1,21 +1,29 @@
 "use client";
 
+export interface SearchProfile {
+  bio: string | null;
+  experience: string[];
+  education: string[];
+  contactAvailability: { email: boolean; phone: boolean } | null;
+}
+
 export interface PersonData {
   name: string;
   title: string;
   linkedinUrl: string;
   profilePictureUrl: string | null;
   source?: "contactout" | "coresignal";
+  searchProfile?: SearchProfile;
 }
 
 interface PersonCardProps {
   person: PersonData;
   onEnrich: (person: PersonData) => void;
   onProfile?: (person: PersonData) => void;
-  accent: string; // CSS color for the section's accent square
+  accent: string;
   isLast?: boolean;
-  enriched?: boolean; // contact already pulled — reopen instead of re-fetch
-  profiled?: boolean; // profile already pulled — reopen instantly
+  enriched?: boolean;
+  profiled?: boolean;
 }
 
 function vanitySlug(url: string): string {
@@ -29,6 +37,7 @@ function vanitySlug(url: string): string {
 
 export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enriched, profiled }: PersonCardProps) {
   const slug = vanitySlug(person.linkedinUrl);
+  const ca = person.searchProfile?.contactAvailability ?? null;
 
   return (
     <div
@@ -36,9 +45,9 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
         !isLast ? "border-b-[3px] border-line/20" : ""
       }`}
     >
-      {/* Avatar */}
+      {/* Avatar — slightly smaller on mobile to reclaim info width */}
       <div
-        className="flex-none w-11 h-11 border-[3px] border-line bg-panel2 overflow-hidden flex items-center justify-center"
+        className="flex-none w-9 h-9 sm:w-11 sm:h-11 border-[3px] border-line bg-panel2 overflow-hidden flex items-center justify-center"
         style={{ ["--nb" as string]: accent }}
       >
         {person.profilePictureUrl ? (
@@ -47,18 +56,16 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             src={person.profilePictureUrl}
             alt={person.name}
             className="w-full h-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
         ) : (
-          <span className="text-ink font-black text-lg">
+          <span className="text-ink font-black text-base sm:text-lg">
             {person.name ? person.name[0].toUpperCase() : "?"}
           </span>
         )}
       </div>
 
-      {/* Info */}
+      {/* Info — availability badges live here so actions column stays narrow */}
       <div className="flex-1 min-w-0">
         <p className="text-ink text-sm font-black truncate">{person.name || "—"}</p>
         <p className="text-muted text-xs font-bold truncate">{person.title || "—"}</p>
@@ -72,6 +79,21 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             /in/{slug}
           </a>
         )}
+        {/* Contact availability — only shown when ContactOut confirms data exists */}
+        {ca && (ca.email || ca.phone) && (
+          <div className="flex gap-2 mt-1">
+            {ca.email && (
+              <span className="font-mono text-[10px] font-black text-acc-green uppercase tracking-wide">
+                ✓ email
+              </span>
+            )}
+            {ca.phone && (
+              <span className="font-mono text-[10px] font-black text-acc-green uppercase tracking-wide">
+                ✓ phone
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -82,14 +104,19 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             enriched ? "nb-btn-primary" : ""
           }`}
         >
-          {enriched ? "Open contact →" : "Get contact →"}
+          {/* Shorter label on mobile to keep column narrow */}
+          <span className="sm:hidden">{enriched ? "Open →" : "Contact →"}</span>
+          <span className="hidden sm:inline">{enriched ? "Open contact →" : "Get contact →"}</span>
         </button>
         {onProfile && (
           <button
             onClick={() => onProfile(person)}
-            className={`nb-btn px-3 py-1.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap${profiled ? " nb-btn-primary" : ""}`}
+            className={`nb-btn px-3 py-1.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap${
+              profiled ? " nb-btn-primary" : ""
+            }`}
           >
-            {profiled ? "✓ Pulled" : "Pull Profile →"}
+            <span className="sm:hidden">{profiled ? "✓ Done" : "Profile →"}</span>
+            <span className="hidden sm:inline">{profiled ? "✓ Pulled" : "Pull Profile →"}</span>
           </button>
         )}
       </div>
