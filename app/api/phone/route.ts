@@ -3,7 +3,8 @@ import { callOrthogonal, QuotaExceededError } from "@/lib/orthogonal";
 import { isValidLinkedInProfileUrl } from "@/lib/validation";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 
-export const maxDuration = 30;
+// Bytemine → ContactOut, each capped at a 12s network timeout; 45s leaves room.
+export const maxDuration = 45;
 
 const MAX_URL_LEN = 500;
 

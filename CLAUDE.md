@@ -86,7 +86,7 @@ Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan*
 
 ## Key files
 
-- `lib/orthogonal.ts` — single `callOrthogonal()` wrapper + `QuotaExceededError` (thrown on 402/quota signal; routes return 503).
+- `lib/orthogonal.ts` — single `callOrthogonal(payload, { timeoutMs? })` wrapper + `QuotaExceededError` (thrown on 402/quota signal; routes return 503). **Every call has a network timeout** (default **12s**; scrape/LLM steps pass **25s**) via `AbortController` — a hanging provider aborts and the waterfall falls through to the next step instead of blocking until the serverless function is killed. (This was the "Bytemine hung → ContactOut never ran" bug: the enrich route also had no `maxDuration` so it died at the 10s Hobby default.) Routes that chain providers set a generous `maxDuration` (search 60, enrich 60, phone 45, alumni/profile 30).
 - `lib/people.ts` — `Person` + `SearchProfile` + `CompanyMeta` types; `fromContactOut()` captures the full search response (experience, education, bio, contact_availability, company meta) at no extra cost; three waterfall finders; `waterfall()` returns `StepResult { people, companyMeta }`.
 - `lib/jobResolver.ts` — three-step generic resolver: JSON-LD → OG title heuristic → LLM. LinkedIn slug URL fix: regex extracts last `≥7`-digit sequence from `/jobs/view/...` path. `ATS_HOSTS` guard. `hostFromUrl()` via `tldts`.
 - `lib/validation.ts` — `canonicalizeLinkedInJobUrl` (handles both bare ID and slug URLs), `isValidLinkedInProfileUrl`, `isValidJobUrl`, `isValidSchool`.

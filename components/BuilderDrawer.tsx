@@ -81,7 +81,7 @@ export function BuilderDrawer() {
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 right-0 h-full w-full sm:w-[500px] bg-base border-l-[3px] border-line z-50 overflow-y-auto"
+        className="fixed top-0 right-0 h-full w-full sm:w-[500px] max-w-full box-border bg-base border-l-[3px] border-line z-50 overflow-y-auto overflow-x-hidden"
         style={{
           transform: open ? "translateX(0)" : "translateX(100%)",
           transition: "transform 140ms steps(4)",

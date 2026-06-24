@@ -3,6 +3,11 @@ import { callOrthogonal, QuotaExceededError } from "@/lib/orthogonal";
 import { isValidLinkedInProfileUrl } from "@/lib/validation";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 
+// Up to three sequential provider calls (Apollo → Bytemine → ContactOut), each
+// capped at a 12s network timeout — give the function room for all three so a
+// slow early provider can't kill the request before the last fallback runs.
+export const maxDuration = 60;
+
 const MAX_URL_LEN = 500;
 
 export interface EnrichLink {

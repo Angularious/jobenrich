@@ -473,6 +473,16 @@ export default function Home() {
                         <p className="font-bold text-sm text-acc-red mt-0.5">
                           {activeSession.results.company}
                         </p>
+                        {activeSession.jobUrl && (
+                          <a
+                            href={activeSession.jobUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block mt-1 font-mono text-[10px] font-bold text-acc-blue underline hover:bg-acc-blue hover:text-base uppercase tracking-wide break-all"
+                          >
+                            ↗ View original posting
+                          </a>
+                        )}
                       </div>
                     </div>
                     {hasInfo && (

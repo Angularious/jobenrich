@@ -93,7 +93,7 @@ export function EnrichDrawer({
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-base border-l-[3px] border-line z-50 overflow-y-auto"
+        className="fixed top-0 right-0 h-full w-full sm:w-[440px] max-w-full box-border bg-base border-l-[3px] border-line z-50 overflow-y-auto overflow-x-hidden"
         style={{
           transform: isOpen ? "translateX(0)" : "translateX(100%)",
           transition: "transform 140ms steps(4)",
@@ -125,21 +125,21 @@ export function EnrichDrawer({
 
           {!loading && !error && person && (
             <>
-              {/* Header */}
+              {/* Header — pr-14 keeps the long name clear of the close button */}
               <div
-                className="border-b-[3px] border-line px-6 pt-12 pb-5"
+                className="border-b-[3px] border-line px-6 pt-12 pb-5 pr-14"
                 style={{ backgroundColor: "var(--color-acc-yellow)" }}
               >
-                <h2 className="font-display text-3xl leading-none tracking-tight text-ink uppercase">
+                <h2 className="font-display text-2xl sm:text-3xl leading-none tracking-tight text-ink uppercase break-words">
                   {person.name || "—"}
                 </h2>
                 {(person.title || data?.position) && (
-                  <p className="font-bold text-ink/70 text-sm mt-1">
+                  <p className="font-bold text-ink/70 text-sm mt-1 break-words">
                     {person.title || data?.position}
                   </p>
                 )}
                 {(data?.company || data?.location) && (
-                  <p className="font-mono font-bold text-ink/70 text-[11px] uppercase tracking-wide mt-1">
+                  <p className="font-mono font-bold text-ink/70 text-[11px] uppercase tracking-wide mt-1 break-words">
                     {[data?.company, data?.location].filter(Boolean).join("  ·  ")}
                   </p>
                 )}

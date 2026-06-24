@@ -211,7 +211,7 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
         },
       },
     },
-  });
+  }, { timeoutMs: 25_000 }); // LLM extraction — slower than a DB lookup
   const j = res?.json;
   const companyName = clean(j?.company_name);
   if (!companyName) return null;
@@ -259,12 +259,15 @@ function fromOgMeta(
 }
 
 async function resolveGeneric(url: string): Promise<ResolvedJob> {
-  const page = await callOrthogonal<SerperResponse>({
-    api: "serper-scrape",
-    path: "/",
-    method: "POST",
-    body: { url, includeMarkdown: true },
-  });
+  const page = await callOrthogonal<SerperResponse>(
+    {
+      api: "serper-scrape",
+      path: "/",
+      method: "POST",
+      body: { url, includeMarkdown: true },
+    },
+    { timeoutMs: 25_000 } // renders JS — legitimately slower than a DB lookup
+  );
 
   // Step 1 (free): structured JSON-LD — most reliable when present.
   const ld = findJobPosting(page?.jsonld);
