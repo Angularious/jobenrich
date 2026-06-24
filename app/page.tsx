@@ -289,28 +289,42 @@ export default function Home() {
   async function handleGetPhone() {
     if (!enrichTarget) return;
     const url = enrichTarget.linkedinUrl;
+    // Strict one-shot: the ContactOut fallback costs $0.55, so a person's phone
+    // is looked up at most once per session. We mark the URL checked in the
+    // `finally` (success, empty, OR error) so the button never returns.
+    if (phoneChecked[url] || phoneLoading) return;
     setPhoneLoading(true);
     setPhoneError(null);
     try {
-      const r = await apiPost<{ phones: string[]; error?: string }>("/api/phone", {
-        linkedinUrl: url,
-      });
+      const r = await apiPost<{ phones: string[]; emails?: string[]; error?: string }>(
+        "/api/phone",
+        { linkedinUrl: url }
+      );
       if (!r.ok) {
-        setPhoneError(errorMessage(r, "Couldn't fetch a phone number. Try again."));
+        setPhoneError(errorMessage(r, "Couldn't complete the phone lookup."));
         return;
       }
       const phones = r.data.phones ?? [];
-      // Merge phones into the open drawer data and the cache, and mark this URL
-      // checked so a zero result shows "No phone found" instead of the button.
-      setEnrichData((prev) => (prev ? { ...prev, phones } : prev));
+      const newEmails = r.data.emails ?? [];
+      // Merge phones + any emails the (paid) lookup surfaced into the drawer and cache.
+      setEnrichData((prev) =>
+        prev
+          ? { ...prev, phones, emails: Array.from(new Set([...prev.emails, ...newEmails])) }
+          : prev
+      );
       setEnrichCache((prev) => {
         const existing = prev[url];
-        return existing ? { ...prev, [url]: { ...existing, phones } } : prev;
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [url]: { ...existing, phones, emails: Array.from(new Set([...existing.emails, ...newEmails])) },
+        };
       });
-      setPhoneChecked((prev) => ({ ...prev, [url]: true }));
     } catch {
-      setPhoneError("Couldn't fetch a phone number. Try again.");
+      setPhoneError("Couldn't complete the phone lookup.");
     } finally {
+      // One attempt, period — even on error (the providers may already have charged).
+      setPhoneChecked((prev) => ({ ...prev, [url]: true }));
       setPhoneLoading(false);
     }
   }

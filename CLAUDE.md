@@ -51,10 +51,10 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - ContactOut step is **skipped entirely** when `contactHint.email=false` (already confirmed no data).
 - Phones come from Bytemine (fires when Apollo has no email) or the separate phone route. If Apollo finds email first, phones are NOT automatically fetched — see Phone flow below.
 
-**Phone flow** (`EnrichDrawer` "Get phone →" → `app/api/phone/route.ts`) — explicit user action, only shown when `contactAvailability.phone=true`:
-- Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback).
-- Result merged into existing `EnrichData.phones` in the cache — no re-fetch needed.
-- Shows "No phone found." (static) when `contactAvailability.phone=false` or unknown.
+**Phone flow** (`EnrichDrawer` "Get phone →" → `app/api/phone/route.ts`) — explicit, **strict one-shot per person per session** (the ContactOut fallback is $0.55, so the client marks the URL checked in a `finally` — success, empty, or error — and the button never returns; no retry affordance):
+- Bytemine ($0.03) → ContactOut `include_phone:true` ($0.55 fallback, only if Bytemine found no phone).
+- **Both providers return emails too**, so the route returns `{ phones, emails }` and the client merges any new emails into `EnrichData.emails` — the $0.55 reveal pays for itself instead of discarding its emails.
+- The "Get phone →" button is offered for everyone (NOT gated on the ContactOut search signal, which has cross-provider false negatives); after the one lookup it shows the phone(s), "No phone found.", or the error.
 
 **Pull Profile flow** (`PersonCard` "Pull Profile →" → `ProfileDrawer`):
 - **ContactOut results (~95%)**: uses `person.searchProfile` data already fetched in the $0.05 search — experience/education/bio strings parsed client-side. Zero extra cost. Instant, no loading state.

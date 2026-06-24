@@ -177,30 +177,24 @@ export function EnrichDrawer({
                           </a>
                         ))}
                       </div>
-                    ) : phoneError ? (
-                      // Lookup failed (rate limit / cap / network) — let them retry.
-                      <div>
-                        <p className="font-mono text-[11px] font-bold text-acc-pink mb-2">{phoneError}</p>
+                    ) : !phoneAttempted ? (
+                      // One-shot: the ContactOut fallback costs $0.55, so we
+                      // look up a phone at most once per person. Note the cost.
+                      <>
                         <button
                           onClick={onGetPhone}
                           disabled={phoneLoading}
                           className="nb-btn px-4 py-2 text-[11px] font-black uppercase tracking-wider"
                         >
-                          {phoneLoading ? "Finding phone…" : "Try again →"}
+                          {phoneLoading ? "Finding phone…" : "Get phone →"}
                         </button>
-                      </div>
-                    ) : !phoneAttempted ? (
-                      // Always offer — Bytemine/ContactOut may have a phone even
-                      // when ContactOut's search-time signal didn't flag one.
-                      <button
-                        onClick={onGetPhone}
-                        disabled={phoneLoading}
-                        className="nb-btn px-4 py-2 text-[11px] font-black uppercase tracking-wider"
-                      >
-                        {phoneLoading ? "Finding phone…" : "Get phone →"}
-                      </button>
+                        <p className="font-mono text-[10px] text-dim mt-1.5">One lookup per person.</p>
+                      </>
+                    ) : phoneError ? (
+                      // Looked once, the call failed — no retry (it may have charged).
+                      <p className="font-mono text-[11px] font-bold text-acc-pink">{phoneError}</p>
                     ) : (
-                      // We looked (Bytemine → ContactOut) and found none.
+                      // Looked once (Bytemine → ContactOut), found nothing.
                       <p className="font-mono text-[11px] text-dim">No phone found.</p>
                     )}
                   </>
