@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isValidJobUrl } from "@/lib/validation";
+import { isValidJobUrl, isLinkedInHost } from "@/lib/validation";
 import { resolveJob } from "@/lib/jobResolver";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 import { findSimilarPeople, findRecruiters, simplifyJobTitle } from "@/lib/people";
@@ -36,55 +36,66 @@ export async function POST(request: Request) {
     );
   }
 
-  // Input is valid and a call will be made — count it against the daily cap.
-  await guard.recordSpend();
-
-  // Step 1: Resolve the URL → { jobTitle, companyName, domain } (any source).
-  let resolved;
+  // The guard reserved the worst case against the cap; we reconcile to the
+  // ACTUAL spend here (resolve + both finders) and record it in the finally.
+  let spentUsd = 0;
   try {
-    resolved = await resolveJob(rawUrl);
-  } catch (err) {
-    if (err instanceof QuotaExceededError) {
-      return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+    // Step 1: Resolve the URL → { jobTitle, companyName, domain } (any source).
+    let resolved;
+    try {
+      resolved = await resolveJob(rawUrl);
+      spentUsd += resolved.cost;
+    } catch (err) {
+      // The resolve calls (Edges, or Serper ± LLM) fired before throwing — bill
+      // their worst case so a failed resolve still counts against the cap.
+      spentUsd += isLinkedInHost(rawUrl) ? 0.09 : 0.045;
+      if (err instanceof QuotaExceededError) {
+        return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+      }
+      console.error("[search] Job resolution failed:", err);
+      return NextResponse.json({ error: UNREADABLE_MSG }, { status: 502 });
     }
-    console.error("[search] Job resolution failed:", err);
-    return NextResponse.json({ error: UNREADABLE_MSG }, { status: 502 });
-  }
 
-  const { jobTitle, companyName, domain, jobLocation } = resolved;
-  if (!companyName) {
-    return NextResponse.json({ error: UNREADABLE_MSG }, { status: 422 });
-  }
+    const { jobTitle, companyName, domain, jobLocation } = resolved;
+    if (!companyName) {
+      return NextResponse.json({ error: UNREADABLE_MSG }, { status: 422 });
+    }
 
-  // jobTitle may be null (e.g. a careers index) → company-only people search.
-  const searchTitle = jobTitle ? simplifyJobTitle(jobTitle) : null;
-  console.log(
-    `[search] (${resolved.source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"}, location: ${jobLocation ?? "—"})`
-  );
+    // jobTitle may be null (e.g. a careers index) → company-only people search.
+    const searchTitle = jobTitle ? simplifyJobTitle(jobTitle) : null;
+    console.log(
+      `[search] (${resolved.source}) "${jobTitle ?? "—"}" → "${searchTitle ?? "—"}" @ "${companyName}" (domain: ${domain ?? "—"}, location: ${jobLocation ?? "—"})`
+    );
 
-  // Step 2: Two waterfalls in parallel — people in similar roles + recruiters.
-  const [similar, recruitersResult] = await Promise.allSettled([
-    findSimilarPeople({
+    // Step 2: Two waterfalls in parallel — people in similar roles + recruiters.
+    const [similar, recruitersResult] = await Promise.allSettled([
+      findSimilarPeople({
+        company: companyName,
+        domain,
+        location: jobLocation,
+        ...(searchTitle ? { jobTitle: searchTitle } : {}),
+      }),
+      findRecruiters({ company: companyName, domain, location: jobLocation }),
+    ]);
+
+    if (similar.status === "fulfilled") spentUsd += similar.value.cost;
+    if (recruitersResult.status === "fulfilled") spentUsd += recruitersResult.value.cost;
+
+    const companyMeta =
+      (similar.status === "fulfilled" ? similar.value.companyMeta : null) ??
+      (recruitersResult.status === "fulfilled" ? recruitersResult.value.companyMeta : null);
+
+    return NextResponse.json({
+      jobTitle,
       company: companyName,
       domain,
-      location: jobLocation,
-      ...(searchTitle ? { jobTitle: searchTitle } : {}),
-    }),
-    findRecruiters({ company: companyName, domain, location: jobLocation }),
-  ]);
-
-  const companyMeta =
-    (similar.status === "fulfilled" ? similar.value.companyMeta : null) ??
-    (recruitersResult.status === "fulfilled" ? recruitersResult.value.companyMeta : null);
-
-  return NextResponse.json({
-    jobTitle,
-    company: companyName,
-    domain,
-    companyMeta,
-    people: similar.status === "fulfilled" ? similar.value.people : [],
-    peopleError: similar.status === "rejected",
-    recruiters: recruitersResult.status === "fulfilled" ? recruitersResult.value.people : [],
-    recruitersError: recruitersResult.status === "rejected",
-  });
+      companyMeta,
+      people: similar.status === "fulfilled" ? similar.value.people : [],
+      peopleError: similar.status === "rejected",
+      recruiters: recruitersResult.status === "fulfilled" ? recruitersResult.value.people : [],
+      recruitersError: recruitersResult.status === "rejected",
+    });
+  } finally {
+    await guard.recordSpend(spentUsd);
+  }
 }

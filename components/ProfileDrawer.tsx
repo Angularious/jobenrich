@@ -81,7 +81,7 @@ export function ProfileDrawer({ person, data, loading, error, onClose }: Profile
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-base border-l-[3px] border-line z-50 overflow-y-auto"
+        className="fixed top-0 right-0 h-full w-full sm:w-[480px] max-w-full box-border bg-base border-l-[3px] border-line z-50 overflow-y-auto overflow-x-hidden"
         style={{
           transform: open ? "translateX(0)" : "translateX(100%)",
           transition: "transform 140ms steps(4)",
@@ -98,9 +98,9 @@ export function ProfileDrawer({ person, data, loading, error, onClose }: Profile
               <X size={16} strokeWidth={3} />
             </button>
 
-            {/* Header */}
+            {/* Header — pr-14 keeps content clear of the close button */}
             <div
-              className="border-b-[3px] border-line px-6 pt-12 pb-5"
+              className="border-b-[3px] border-line px-6 pt-12 pb-5 pr-14"
               style={{ backgroundColor: "var(--color-acc-yellow)" }}
             >
               <div className="flex items-center gap-3 mb-2">
@@ -119,7 +119,7 @@ export function ProfileDrawer({ person, data, loading, error, onClose }: Profile
                   )}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="font-display text-2xl leading-none tracking-tight text-ink uppercase">
+                  <h2 className="font-display text-xl sm:text-2xl leading-none tracking-tight text-ink uppercase break-words">
                     {person.name}
                   </h2>
                   <p className="font-mono text-[11px] font-bold text-ink/70 mt-0.5 truncate">
@@ -151,8 +151,8 @@ export function ProfileDrawer({ person, data, loading, error, onClose }: Profile
               {!loading && data && !hasContent && (
                 <div className="mt-8 nb-flat bg-panel px-4 py-3">
                   <p className="font-mono text-[11px] font-bold text-dim">
-                    No profile data found. Try enriching contact info — Apollo returns richer
-                    profiles for verified contacts.
+                    No profile data found. Try &ldquo;Get contact&rdquo; — verified contacts
+                    often come with a richer profile.
                   </p>
                 </div>
               )}

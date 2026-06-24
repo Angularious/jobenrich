@@ -24,7 +24,12 @@ export interface ResolvedJob {
   domain: string | null;
   jobLocation: string | null;
   source: "linkedin" | "jsonld" | "llm";
+  cost: number; // real USD spent resolving this URL (for the daily-cap ledger)
 }
+
+// The resolve helpers below build everything except `cost`; resolveGeneric/
+// resolveLinkedIn stamp the cost based on which calls actually fired.
+type ResolvedFields = Omit<ResolvedJob, "cost">;
 
 // Hosts that are ATS/job-board infrastructure or social/aggregator sites, not
 // the hiring company — never treat these as the company's own domain.
@@ -109,7 +114,7 @@ async function resolveLinkedIn(canonicalUrl: string): Promise<ResolvedJob> {
     body: { input: { linkedin_job_url: canonicalUrl } },
   });
   const { jobTitle, companyName, domain, jobLocation } = linkedInFields(data);
-  return { jobTitle, companyName, domain, jobLocation, source: "linkedin" };
+  return { jobTitle, companyName, domain, jobLocation, source: "linkedin", cost: 0.09 };
 }
 
 /* ── Generic branch (Serper render → JSON-LD or LLM) ─────────────────── */
@@ -169,7 +174,7 @@ function findJobPosting(node: unknown, depth = 0): JobPostingLD | null {
   return null;
 }
 
-function fromJsonLd(ld: JobPostingLD, pageUrl: string): ResolvedJob | null {
+function fromJsonLd(ld: JobPostingLD, pageUrl: string): ResolvedFields | null {
   const jobTitle = typeof ld.title === "string" && ld.title.trim() ? ld.title.trim() : null;
   const org = ld.hiringOrganization;
   const companyName =
@@ -192,7 +197,7 @@ const EMPTY_VAL = /^(no content available|n\/?a|none|null|unknown)$/i;
 const clean = (v: unknown): string | null =>
   typeof v === "string" && v.trim() && !EMPTY_VAL.test(v.trim()) ? v.trim() : null;
 
-async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJob | null> {
+async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedFields | null> {
   const res = await callOrthogonal<ExtractResponse>({
     api: "scrapegraphai",
     path: "/api/extract",
@@ -211,7 +216,7 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
         },
       },
     },
-  });
+  }, { timeoutMs: 25_000 }); // LLM extraction — slower than a DB lookup
   const j = res?.json;
   const companyName = clean(j?.company_name);
   if (!companyName) return null;
@@ -231,7 +236,7 @@ async function llmExtract(markdown: string, pageUrl: string): Promise<ResolvedJo
 function fromOgMeta(
   meta: Record<string, unknown> | undefined,
   pageUrl: string
-): ResolvedJob | null {
+): ResolvedFields | null {
   if (!meta) return null;
   // Serper may use ogTitle or og:title depending on version.
   const raw =
@@ -259,18 +264,23 @@ function fromOgMeta(
 }
 
 async function resolveGeneric(url: string): Promise<ResolvedJob> {
-  const page = await callOrthogonal<SerperResponse>({
-    api: "serper-scrape",
-    path: "/",
-    method: "POST",
-    body: { url, includeMarkdown: true },
-  });
+  const page = await callOrthogonal<SerperResponse>(
+    {
+      api: "serper-scrape",
+      path: "/",
+      method: "POST",
+      body: { url, includeMarkdown: true },
+    },
+    { timeoutMs: 25_000 } // renders JS — legitimately slower than a DB lookup
+  );
+  // Serper always ran ($0.02); the LLM step adds $0.025 if reached.
+  let cost = 0.02;
 
   // Step 1 (free): structured JSON-LD — most reliable when present.
   const ld = findJobPosting(page?.jsonld);
   if (ld) {
     const resolved = fromJsonLd(ld, url);
-    if (resolved?.companyName) return resolved;
+    if (resolved?.companyName) return { ...resolved, cost };
   }
 
   // Step 2 (free): OG/page title heuristic — saves $0.025 for common ATS
@@ -278,18 +288,19 @@ async function resolveGeneric(url: string): Promise<ResolvedJob> {
   const ogResolved = fromOgMeta(page?.metadata as Record<string, unknown> | undefined, url);
   if (ogResolved?.companyName) {
     console.log(`[search] OG meta fallback: "${ogResolved.jobTitle}" @ "${ogResolved.companyName}"`);
-    return ogResolved;
+    return { ...ogResolved, cost };
   }
 
   // Step 3 ($0.025): LLM reads the rendered markdown — handles everything else.
   const md = page?.markdown || page?.text;
   if (md && md.trim()) {
+    cost += 0.025;
     const resolved = await llmExtract(md, url);
-    if (resolved?.companyName) return resolved;
+    if (resolved?.companyName) return { ...resolved, cost };
   }
 
   // Nothing usable — signal an empty resolution (caller turns this into 422).
-  return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm" };
+  return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm", cost };
 }
 
 /** Resolve any job/careers URL → { jobTitle, companyName, domain }. Throws on
@@ -301,7 +312,7 @@ export function resolveJob(rawUrl: string): Promise<ResolvedJob> {
     if (canonical) return resolveLinkedIn(canonical);
     // A LinkedIn URL that isn't a job posting (profile, /company, feed) — the
     // generic scraper would just hit the auth wall, so don't spend on it.
-    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin" });
+    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin", cost: 0 });
   }
   return resolveGeneric(rawUrl);
 }

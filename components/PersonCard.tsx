@@ -4,7 +4,7 @@ export interface SearchProfile {
   bio: string | null;
   experience: string[];
   education: string[];
-  contactAvailability: { email: boolean; phone: boolean } | null;
+  contactAvailability: { email: boolean } | null;
 }
 
 export interface PersonData {
@@ -37,7 +37,6 @@ function vanitySlug(url: string): string {
 
 export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enriched, profiled }: PersonCardProps) {
   const slug = vanitySlug(person.linkedinUrl);
-  const ca = person.searchProfile?.contactAvailability ?? null;
 
   return (
     <div
@@ -59,7 +58,7 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
         ) : (
-          <span className="text-ink font-black text-base sm:text-lg">
+          <span className="text-ink font-black text-lg">
             {person.name ? person.name[0].toUpperCase() : "?"}
           </span>
         )}
@@ -74,25 +73,10 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             href={person.linkedinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-acc-blue underline text-[11px] font-mono hover:bg-acc-blue hover:text-base"
+            className="block max-w-full truncate text-acc-blue underline text-[11px] font-mono hover:bg-acc-blue hover:text-base"
           >
             /in/{slug}
           </a>
-        )}
-        {/* Contact availability — only shown when ContactOut confirms data exists */}
-        {ca && (ca.email || ca.phone) && (
-          <div className="flex gap-2 mt-1">
-            {ca.email && (
-              <span className="font-mono text-[10px] font-black text-acc-green uppercase tracking-wide">
-                ✓ email
-              </span>
-            )}
-            {ca.phone && (
-              <span className="font-mono text-[10px] font-black text-acc-green uppercase tracking-wide">
-                ✓ phone
-              </span>
-            )}
-          </div>
         )}
       </div>
 

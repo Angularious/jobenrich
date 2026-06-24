@@ -4,21 +4,20 @@ import { checkRateLimit, retryAfter } from "./rateLimit";
 import { withinCap, recordSpend, capResetAt } from "./spendCap";
 import { verifyRequestToken, verifyPageStamp } from "./tokens";
 
-/* ── Per-step config ──────────────────────────────────────────────
-   DAILY_LIMIT is per unique visitor (composite fingerprint), per step.
-   `cost` is an APPROXIMATE Orthogonal cost per call in USD, used only to
-   feed the daily spend cap — see the audit report for how these were
-   estimated. They are deliberately a touch conservative.              */
+/* ── Per-step config ────────────────────────────────────────────── */
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const PER_STEP_DAILY_LIMIT = 10;
 const MIN_FORM_MS = 1500;
 
+// `limit` = per-visitor calls/day for this step. `cost` = WORST-CASE USD the
+// gate checks against the daily cap BEFORE starting work (so a request that
+// could blow the cap isn't started). Routes then record the ACTUAL spend via
+// recordSpend(actual) — search/alumni/enrich all tally real cost.
 export const STEPS = {
-  search: { cost: 0.12, requireTiming: true, noun: "searches" },
-  alumni: { cost: 0.08, requireTiming: true, noun: "alumni lookups" },
-  enrich: { cost: 0.1, requireTiming: false, noun: "contact lookups" },
-  profile: { cost: 0.01, requireTiming: false, noun: "profile lookups" },
-  phone: { cost: 0.05, requireTiming: false, noun: "phone lookups" },
+  // search worst: resolve $0.09 + people ~$0.221 + recruiters ~$0.242 ≈ $0.55.
+  search: { cost: 0.6, requireTiming: true, noun: "searches", limit: 10 },
+  alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups", limit: 10 },
+  enrich: { cost: 0.37, requireTiming: false, noun: "contact lookups", limit: 10 }, // worst: Apollo .01 + Bytemine .03 + ContactOut .33 (email only)
+  profile: { cost: 0.01, requireTiming: false, noun: "profile lookups", limit: 10 },
 } as const;
 
 export type StepName = keyof typeof STEPS;
@@ -40,7 +39,7 @@ export interface GuardBody {
 }
 
 type GuardResult =
-  | { ok: true; recordSpend: () => Promise<void> }
+  | { ok: true; recordSpend: (actualUsd?: number) => Promise<void> }
   | { ok: false; response: NextResponse };
 
 const BOT_UA =
@@ -168,7 +167,7 @@ export async function guardRequest(
 
   // 6. Per-visitor, per-step daily rate limit.
   const key = `${step}:${compositeKey(request, body.fp)}`;
-  const rl = await checkRateLimit(key, PER_STEP_DAILY_LIMIT, WINDOW_MS);
+  const rl = await checkRateLimit(key, cfg.limit, WINDOW_MS);
   if (!rl.allowed) {
     return {
       ok: false,
@@ -184,5 +183,11 @@ export async function guardRequest(
     };
   }
 
-  return { ok: true, recordSpend: () => recordSpend(cfg.cost) };
+  // Reconcile to the real cost when the route knows it (varies by which
+  // providers fired); otherwise record the worst-case reservation.
+  return {
+    ok: true,
+    recordSpend: (actualUsd?: number) =>
+      recordSpend(typeof actualUsd === "number" && actualUsd >= 0 ? actualUsd : cfg.cost),
+  };
 }

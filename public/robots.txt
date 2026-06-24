@@ -1,0 +1,3 @@
+# Public demo — not for indexing. Disallow all crawlers.
+User-agent: *
+Disallow: /

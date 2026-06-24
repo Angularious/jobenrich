@@ -17,7 +17,6 @@ export interface EnrichLink {
 
 export interface EnrichData {
   emails: string[];
-  phones: string[];
   source: "apollo" | "bytemine" | "contactout" | "none";
   company: string | null;
   position: string | null;
@@ -31,8 +30,6 @@ interface EnrichDrawerProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
-  onGetPhone?: () => void;
-  phoneLoading?: boolean;
 }
 
 function Band({ children }: { children: React.ReactNode }) {
@@ -43,15 +40,7 @@ function Band({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function EnrichDrawer({
-  person,
-  data,
-  loading,
-  error,
-  onClose,
-  onGetPhone,
-  phoneLoading,
-}: EnrichDrawerProps) {
+export function EnrichDrawer({ person, data, loading, error, onClose }: EnrichDrawerProps) {
   const isOpen = person !== null;
 
   useEffect(() => {
@@ -62,17 +51,11 @@ export function EnrichDrawer({
   }, [isOpen]);
 
   const emails = data?.emails ?? [];
-  const phones = data?.phones ?? [];
   const links = data?.links ?? [];
   const hasEmails = emails.length > 0;
-  const hasPhones = phones.length > 0;
   const hasLinks = links.length > 0;
-  const hasContact = hasEmails || hasPhones;
   const hasProfile = Boolean(data?.company || data?.location || hasLinks);
-  const nothing = !loading && !error && data && !hasContact && !hasProfile;
-
-  // ContactOut already told us if they have a phone in the search response.
-  const phoneAvailable = person?.searchProfile?.contactAvailability?.phone === true;
+  const nothing = !loading && !error && data && !hasEmails && !hasProfile;
 
   return (
     <>
@@ -89,7 +72,7 @@ export function EnrichDrawer({
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-base border-l-[3px] border-line z-50 overflow-y-auto"
+        className="fixed top-0 right-0 h-full w-full sm:w-[440px] max-w-full box-border bg-base border-l-[3px] border-line z-50 overflow-y-auto overflow-x-hidden"
         style={{
           transform: isOpen ? "translateX(0)" : "translateX(100%)",
           transition: "transform 140ms steps(4)",
@@ -121,71 +104,47 @@ export function EnrichDrawer({
 
           {!loading && !error && person && (
             <>
-              {/* Header */}
+              {/* Header — pr-14 keeps the long name clear of the close button */}
               <div
-                className="border-b-[3px] border-line px-6 pt-12 pb-5"
+                className="border-b-[3px] border-line px-6 pt-12 pb-5 pr-14"
                 style={{ backgroundColor: "var(--color-acc-yellow)" }}
               >
-                <h2 className="font-display text-3xl leading-none tracking-tight text-ink uppercase">
+                <h2 className="font-display text-2xl sm:text-3xl leading-none tracking-tight text-ink uppercase break-words">
                   {person.name || "—"}
                 </h2>
                 {(person.title || data?.position) && (
-                  <p className="font-bold text-ink/70 text-sm mt-1">
+                  <p className="font-bold text-ink/70 text-sm mt-1 break-words">
                     {person.title || data?.position}
                   </p>
                 )}
                 {(data?.company || data?.location) && (
-                  <p className="font-mono font-bold text-ink/70 text-[11px] uppercase tracking-wide mt-1">
+                  <p className="font-mono font-bold text-ink/70 text-[11px] uppercase tracking-wide mt-1 break-words">
                     {[data?.company, data?.location].filter(Boolean).join("  ·  ")}
                   </p>
                 )}
               </div>
 
               <div className="px-6">
-                {/* Email section */}
-                {hasEmails && (
+                {/* Email — shown whenever the lookup resolved with any data
+                    (email or profile). This site surfaces email only, never
+                    phone numbers, by design. */}
+                {!nothing && (
                   <>
                     <Band>■ Email</Band>
-                    <div className="space-y-2">
-                      {emails.map((email) => (
-                        <a
-                          key={email}
-                          href={`mailto:${email}`}
-                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base break-all"
-                        >
-                          {email}
-                        </a>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {/* Phone section — always shown once we have an email */}
-                {hasEmails && (
-                  <>
-                    <Band>■ Phone</Band>
-                    {hasPhones ? (
+                    {hasEmails ? (
                       <div className="space-y-2">
-                        {phones.map((phone) => (
+                        {emails.map((email) => (
                           <a
-                            key={phone}
-                            href={`tel:${phone}`}
-                            className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base"
+                            key={email}
+                            href={`mailto:${email}`}
+                            className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base break-all"
                           >
-                            {phone}
+                            {email}
                           </a>
                         ))}
                       </div>
-                    ) : phoneAvailable ? (
-                      <button
-                        onClick={onGetPhone}
-                        disabled={phoneLoading}
-                        className="nb-btn px-4 py-2 text-[11px] font-black uppercase tracking-wider"
-                      >
-                        {phoneLoading ? "Finding phone…" : "Get phone →"}
-                      </button>
                     ) : (
-                      <p className="font-mono text-[11px] text-dim">No phone found.</p>
+                      <p className="font-mono text-[11px] text-dim">No email found.</p>
                     )}
                   </>
                 )}

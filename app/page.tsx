@@ -49,17 +49,10 @@ function makeId() {
 
 function exportCSV(session: SearchSession, enrichCache: Record<string, EnrichData>) {
   const { results } = session;
-  const header = ["Name", "Title", "Type", "LinkedIn URL", "Email", "Phone"];
+  const header = ["Name", "Title", "Type", "LinkedIn URL", "Email"];
   const toRow = (p: PersonData, type: string) => {
     const e = enrichCache[p.linkedinUrl];
-    return [
-      p.name,
-      p.title,
-      type,
-      p.linkedinUrl,
-      e?.emails[0] ?? "",
-      e?.phones[0] ?? "",
-    ];
+    return [p.name, p.title, type, p.linkedinUrl, e?.emails[0] ?? ""];
   };
   const rows = [
     header,
@@ -174,8 +167,6 @@ export default function Home() {
   const [enrichData, setEnrichData] = useState<EnrichData | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
-  const [phoneLoading, setPhoneLoading] = useState(false);
-
   const enrichedUrls = new Set(Object.keys(enrichCache));
 
   const [profileCache, setProfileCache] = useState<Record<string, ProfileData>>({});
@@ -254,11 +245,14 @@ export default function Home() {
     setEnrichData(null);
     setEnrichLoading(true);
     try {
+      // Pass only the email-availability hint (the route uses it to skip the
+      // ContactOut email reveal when the search already said there's none).
+      const emailHint = person.searchProfile?.contactAvailability
+        ? { email: person.searchProfile.contactAvailability.email }
+        : null;
       const r = await apiPost<EnrichData & { error?: string }>("/api/enrich", {
         linkedinUrl: person.linkedinUrl,
-        ...(person.searchProfile?.contactAvailability != null
-          ? { contactHint: person.searchProfile.contactAvailability }
-          : {}),
+        ...(emailHint ? { contactHint: emailHint } : {}),
       });
       if (!r.ok) {
         setEnrichError(errorMessage(r, "Enrichment failed. Try again."));
@@ -278,28 +272,6 @@ export default function Home() {
     setEnrichTarget(null);
     setEnrichData(null);
     setEnrichError(null);
-  }
-
-  async function handleGetPhone() {
-    if (!enrichTarget) return;
-    setPhoneLoading(true);
-    try {
-      const r = await apiPost<{ phones: string[]; error?: string }>("/api/phone", {
-        linkedinUrl: enrichTarget.linkedinUrl,
-      });
-      if (!r.ok) return;
-      const phones = r.data.phones ?? [];
-      // Merge phones into the open drawer data and the cache.
-      setEnrichData((prev) => (prev ? { ...prev, phones } : prev));
-      setEnrichCache((prev) => {
-        const existing = prev[enrichTarget.linkedinUrl];
-        return existing
-          ? { ...prev, [enrichTarget.linkedinUrl]: { ...existing, phones } }
-          : prev;
-      });
-    } finally {
-      setPhoneLoading(false);
-    }
   }
 
   async function handleProfile(person: PersonData) {
@@ -370,8 +342,8 @@ export default function Home() {
           </a>
         </div>
 
-        {/* Marquee stripe */}
-        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5">
+        {/* Marquee stripe — decorative, hidden from screen readers */}
+        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5" aria-hidden="true">
           <div className="flex w-max" style={{ animation: "nbMarquee 40s linear infinite" }}>
             {[0, 1].map((i) => (
               <span
@@ -460,6 +432,16 @@ export default function Home() {
                         <p className="font-bold text-sm text-acc-red mt-0.5">
                           {activeSession.results.company}
                         </p>
+                        {activeSession.jobUrl && (
+                          <a
+                            href={activeSession.jobUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block mt-1 font-mono text-[10px] font-bold text-acc-blue underline hover:bg-acc-blue hover:text-base uppercase tracking-wide break-all"
+                          >
+                            ↗ View original posting
+                          </a>
+                        )}
                       </div>
                     </div>
                     {hasInfo && (
@@ -508,7 +490,9 @@ export default function Home() {
               );
             })()}
 
+            {/* key per session so the "show more" reveal resets when switching tabs */}
             <ResultsSection
+              key={`people-${activeSession.id}`}
               title="People to talk to"
               hint="at the company"
               people={activeSession.results.people}
@@ -521,6 +505,7 @@ export default function Home() {
               emptyMessage="No matching people surfaced for this company yet. Try a broader role, or check the recruiters below."
             />
             <ResultsSection
+              key={`recruiters-${activeSession.id}`}
               title="Recruiters"
               hint="hiring now"
               people={activeSession.results.recruiters}
@@ -562,8 +547,6 @@ export default function Home() {
         loading={enrichLoading}
         error={enrichError}
         onClose={closeDrawer}
-        onGetPhone={handleGetPhone}
-        phoneLoading={phoneLoading}
       />
 
       <ProfileDrawer

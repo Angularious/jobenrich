@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { PersonData, PersonCard } from "./PersonCard";
 
 const VARIANTS = {
@@ -6,6 +9,9 @@ const VARIANTS = {
   green: "var(--color-acc-green)",
   pink: "var(--color-acc-pink)",
 } as const;
+
+// How many people to show before the "show more" reveal.
+const INITIAL_VISIBLE = 5;
 
 interface ResultsSectionProps {
   title: string;
@@ -33,6 +39,11 @@ export function ResultsSection({
   emptyMessage = "Nobody surfaced for this company.",
 }: ResultsSectionProps) {
   const accent = VARIANTS[variant];
+  const [showAll, setShowAll] = useState(false);
+
+  const visible = showAll ? people : people.slice(0, INITIAL_VISIBLE);
+  const hiddenCount = people.length - visible.length;
+  const hasMore = hiddenCount > 0;
 
   return (
     <section className="nb-card mt-8">
@@ -64,18 +75,30 @@ export function ResultsSection({
             {emptyMessage}
           </div>
         ) : (
-          people.map((person, i) => (
-            <PersonCard
-              key={person.linkedinUrl}
-              person={person}
-              onEnrich={onEnrich}
-              onProfile={onProfile}
-              accent={accent}
-              isLast={i === people.length - 1}
-              enriched={enrichedUrls?.has(person.linkedinUrl)}
-              profiled={profiledUrls?.has(person.linkedinUrl)}
-            />
-          ))
+          <>
+            {visible.map((person, i) => (
+              <PersonCard
+                key={person.linkedinUrl}
+                person={person}
+                onEnrich={onEnrich}
+                onProfile={onProfile}
+                accent={accent}
+                // Keep the bottom border on the last card when a "show more"
+                // row follows, so it reads as a divider.
+                isLast={i === visible.length - 1 && !hasMore}
+                enriched={enrichedUrls?.has(person.linkedinUrl)}
+                profiled={profiledUrls?.has(person.linkedinUrl)}
+              />
+            ))}
+            {hasMore && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="w-full px-4 py-3 font-mono text-[11px] font-black uppercase tracking-widest text-acc-blue hover:bg-acc-blue hover:text-base"
+              >
+                + Show {hiddenCount} more
+              </button>
+            )}
+          </>
         )}
       </div>
     </section>

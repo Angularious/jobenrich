@@ -38,17 +38,20 @@ export async function POST(request: Request) {
     );
   }
 
-  // Input is valid and a call will be made — count it against the daily cap.
-  await guard.recordSpend();
-
+  // Reserved worst case at the gate; reconcile to actual spend in the finally.
+  let spentUsd = 0;
   try {
-    const { people: alumni } = await findAlumni({ company, domain, school });
+    const { people: alumni, cost } = await findAlumni({ company, domain, school });
+    spentUsd = cost;
     return NextResponse.json({ alumni, alumniError: false });
   } catch (err) {
+    spentUsd = 0.05; // at least one ContactOut step fired before throwing
     if (err instanceof QuotaExceededError) {
       return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
     }
     console.error("[alumni] Search failed:", err);
     return NextResponse.json({ alumni: [], alumniError: true }, { status: 502 });
+  } finally {
+    await guard.recordSpend(spentUsd);
   }
 }

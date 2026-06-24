@@ -22,6 +22,8 @@ export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrl
   const [error, setError] = useState<string | null>(null);
   const [alumni, setAlumni] = useState<PersonData[] | null>(null);
   const [alumniError, setAlumniError] = useState(false);
+  // Bumped on each successful search so the results' "show more" reveal resets.
+  const [searchSeq, setSearchSeq] = useState(0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +44,7 @@ export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrl
       }
       setAlumni(r.data.alumni ?? []);
       setAlumniError(Boolean(r.data.alumniError));
+      setSearchSeq((n) => n + 1);
     } catch {
       setError("Request failed. Check your connection.");
     } finally {
@@ -116,6 +119,7 @@ export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrl
 
       {alumni && !loading && (
         <ResultsSection
+          key={`alumni-${searchSeq}`}
           title="Alumni"
           hint={`from ${school.trim()}`}
           people={alumni}
