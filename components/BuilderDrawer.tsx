@@ -4,46 +4,48 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 
+// Capability-level breakdown — we describe WHAT each call does, never the
+// underlying vendor (the whole pitch is "one Orthogonal key, 50+ APIs").
 const API_CALLS = [
   {
     step: "Resolve LinkedIn job",
-    provider: "Edges — linkedin-extract-job",
+    provider: "LinkedIn job extractor",
     cost: "$0.09",
     note: "Purpose-built for auth-walled LinkedIn pages",
   },
   {
     step: "Resolve any other job URL",
-    provider: "Serper (JS render) → ScrapeGraphAI (LLM extract)",
+    provider: "JS-rendering scraper → LLM extractor",
     cost: "$0.02 – $0.045",
-    note: "Serper renders SPAs; LLM fallback parses the result",
+    note: "Renders SPAs; an LLM parses the result when there's no structured data",
   },
   {
     step: "Find people + recruiters",
-    provider: "ContactOut /v1/people/search",
+    provider: "People search API",
     cost: "$0.05 / call",
-    note: "Domain-first waterfall, location-filtered first, then broadened",
+    note: "Domain-first waterfall, country-filtered first, then broadened",
   },
   {
     step: "People fallback",
-    provider: "Coresignal employee_base preview",
+    provider: "Employee database preview",
     cost: "$0.021 / call",
-    note: "Fires only when ContactOut returns zero",
+    note: "Fires only when the primary search returns zero",
   },
   {
     step: "Contact reveal — email",
-    provider: "Apollo → Bytemine → ContactOut",
-    cost: "$0.01 → $0.03 → $0.33",
-    note: "Cheap-first waterfall; next step fires only if no email yet",
+    provider: "Cheap → rich → deep enrichment waterfall",
+    cost: "$0.01 → $0.03 → $0.55",
+    note: "Next step fires only if no email yet",
   },
   {
     step: "Contact reveal — phone",
-    provider: "Bytemine + ContactOut",
-    cost: "Bundled above",
-    note: "Mobile + work numbers from Bytemine; ContactOut as backstop",
+    provider: "Contact enrichment + deep reveal",
+    cost: "$0.03 → $0.55",
+    note: "Mobile + work numbers; deep reveal only as a backstop",
   },
   {
     step: "Alumni search",
-    provider: "ContactOut (education filter)",
+    provider: "People search API (education filter)",
     cost: "$0.05 – $0.10",
     note: "Same domain-first waterfall as the main people search",
   },

@@ -148,26 +148,31 @@ export function EnrichDrawer({
               </div>
 
               <div className="px-6">
-                {/* Email section */}
-                {hasEmails && (
+                {/* Email + Phone shown whenever the lookup resolved with ANY
+                    data (not gated on email alone) — a contact can have a phone
+                    or profile but no email, and we still want those reachable. */}
+                {!nothing && (
                   <>
                     <Band>■ Email</Band>
-                    <div className="space-y-2">
-                      {emails.map((email) => (
-                        <a
-                          key={email}
-                          href={`mailto:${email}`}
-                          className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base break-all"
-                        >
-                          {email}
-                        </a>
-                      ))}
-                    </div>
+                    {hasEmails ? (
+                      <div className="space-y-2">
+                        {emails.map((email) => (
+                          <a
+                            key={email}
+                            href={`mailto:${email}`}
+                            className="nb-flat block bg-panel px-3 py-2 text-sm font-bold font-mono text-acc-blue underline hover:bg-acc-blue hover:text-base break-all"
+                          >
+                            {email}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="font-mono text-[11px] text-dim">No email found.</p>
+                    )}
                   </>
                 )}
 
-                {/* Phone section — always shown once we have an email */}
-                {hasEmails && (
+                {!nothing && (
                   <>
                     <Band>■ Phone</Band>
                     {hasPhones ? (

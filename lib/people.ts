@@ -188,25 +188,33 @@ function fromCoresignal(
 /* ── Waterfall runner ────────────────────────────────────────────────
    Each step fires only if the previous returned zero people. CompanyMeta
    is captured from the first step that returns it (even if that step
-   returned no people) so we still get logo/context on empty results.    */
+   returned no people) so we still get logo/context on empty results.
+   `cost` accumulates the real USD of every step that ran, so the route can
+   reconcile the daily cap to actual spend (not a flat estimate).          */
 
-type StepResult = { people: Person[]; companyMeta: CompanyMeta | null };
+// A single step reports the people it found, any company meta, and what the
+// call cost ($0.05 ContactOut search, $0.021 Coresignal preview).
+type StepOutput = { people: Person[]; companyMeta: CompanyMeta | null; cost: number };
+// What a finder returns: the winning people + meta + total spent across steps.
+type StepResult = { people: Person[]; companyMeta: CompanyMeta | null; cost: number };
 
 async function waterfall(
   label: string,
-  steps: Array<() => Promise<StepResult>>
+  steps: Array<() => Promise<StepOutput>>
 ): Promise<StepResult> {
   let anySuccess = false;
   let lastErr: unknown;
   let bestMeta: CompanyMeta | null = null;
+  let totalCost = 0;
   for (const step of steps) {
     try {
-      const { people, companyMeta } = await step();
+      const { people, companyMeta, cost } = await step();
       anySuccess = true;
+      totalCost += cost; // a call completed → it was charged
       if (companyMeta && !bestMeta) bestMeta = companyMeta;
       if (people.length) {
-        console.log(`[people] ${label}: ${people.length} found`);
-        return { people, companyMeta: bestMeta };
+        console.log(`[people] ${label}: ${people.length} found ($${totalCost.toFixed(3)})`);
+        return { people, companyMeta: bestMeta, cost: totalCost };
       }
     } catch (err) {
       lastErr = err;
@@ -214,8 +222,8 @@ async function waterfall(
     }
   }
   if (!anySuccess && lastErr) throw lastErr;
-  console.log(`[people] ${label}: 0 found`);
-  return { people: [], companyMeta: bestMeta };
+  console.log(`[people] ${label}: 0 found ($${totalCost.toFixed(3)})`);
+  return { people: [], companyMeta: bestMeta, cost: totalCost };
 }
 
 export interface FinderInput {
@@ -244,9 +252,9 @@ export function findSimilarPeople(
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
+    contactOutSearch(q).then((r) => ({ ...fromContactOut(r, LIMIT), cost: 0.05 }));
   const cs = (q: Record<string, unknown>) =>
-    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null }));
+    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
 
   // Tightened to ≤4 ContactOut calls ($0.20 worst, was 8/$0.40). We keep only
   // the high-value steps: role-matched at the exact domain (location-first),
@@ -276,6 +284,10 @@ function isVirtualLocation(loc: string): boolean {
 }
 
 const US_HINT = /\b(united states|u\.?\s?s\.?\s?a?\.?|usa)\b/i;
+// US state names + 2-letter codes, so "San Francisco, CA" or "Austin, Texas"
+// (no explicit country) still resolve to the US rather than a bogus "CA" filter.
+const US_STATE =
+  /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i;
 
 // Reduce a job location to a COUNTRY-level filter for ContactOut. Recruiters
 // (and similar-role people) at a company are spread across the country or work
@@ -290,7 +302,7 @@ function locationCountry(loc: string | null | undefined): string | null {
   if (!loc) return null;
   const t = loc.trim();
   if (!t || isVirtualLocation(t)) return null;
-  if (US_HINT.test(t)) return "United States";
+  if (US_HINT.test(t) || US_STATE.test(t)) return "United States";
   // "City, Region, Country" → the last comma-segment is the country. A bare
   // city with no country is too ambiguous to country-ify, so skip filtering.
   const parts = t.split(",").map((s) => s.trim()).filter(Boolean);
@@ -315,9 +327,9 @@ export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
+    contactOutSearch(q).then((r) => ({ ...fromContactOut(r, LIMIT), cost: 0.05 }));
   const cs = (q: Record<string, unknown>) =>
-    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null }));
+    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
 
   // Domain-first; within each, country-filtered before unfiltered.
   if (domain) {
@@ -338,7 +350,7 @@ export function findAlumni(input: FinderInput & { school: string }): Promise<Ste
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
+    contactOutSearch(q).then((r) => ({ ...fromContactOut(r, LIMIT), cost: 0.05 }));
   if (domain) steps.push(() => co({ domain: [domain], education: [school] }));
   steps.push(() => co({ company: [company], education: [school] }));
   return waterfall("alumni", steps);

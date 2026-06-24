@@ -402,8 +402,8 @@ export default function Home() {
           </a>
         </div>
 
-        {/* Marquee stripe */}
-        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5">
+        {/* Marquee stripe — decorative, hidden from screen readers */}
+        <div className="bg-acc-red overflow-hidden border-t-[3px] border-line py-1.5" aria-hidden="true">
           <div className="flex w-max" style={{ animation: "nbMarquee 40s linear infinite" }}>
             {[0, 1].map((i) => (
               <span

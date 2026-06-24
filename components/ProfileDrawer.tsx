@@ -151,8 +151,8 @@ export function ProfileDrawer({ person, data, loading, error, onClose }: Profile
               {!loading && data && !hasContent && (
                 <div className="mt-8 nb-flat bg-panel px-4 py-3">
                   <p className="font-mono text-[11px] font-bold text-dim">
-                    No profile data found. Try enriching contact info — Apollo returns richer
-                    profiles for verified contacts.
+                    No profile data found. Try &ldquo;Get contact&rdquo; — verified contacts
+                    often come with a richer profile.
                   </p>
                 </div>
               )}

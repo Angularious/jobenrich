@@ -58,7 +58,7 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
         ) : (
-          <span className="text-ink font-black text-base sm:text-lg">
+          <span className="text-ink font-black text-lg">
             {person.name ? person.name[0].toUpperCase() : "?"}
           </span>
         )}
@@ -73,7 +73,7 @@ export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enrich
             href={person.linkedinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-acc-blue underline text-[11px] font-mono hover:bg-acc-blue hover:text-base"
+            className="block max-w-full truncate text-acc-blue underline text-[11px] font-mono hover:bg-acc-blue hover:text-base"
           >
             /in/{slug}
           </a>

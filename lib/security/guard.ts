@@ -14,10 +14,13 @@ import { verifyRequestToken, verifyPageStamp } from "./tokens";
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const MIN_FORM_MS = 1500;
 
-// `limit` = per-visitor calls/day for this step. `cost` = WORST-CASE USD
-// reserved against the daily cap (routes reconcile to actual via recordSpend).
+// `limit` = per-visitor calls/day for this step. `cost` = WORST-CASE USD the
+// gate checks against the daily cap BEFORE starting work (so a request that
+// could blow the cap isn't started). Routes then record the ACTUAL spend via
+// recordSpend(actual) — search/alumni/enrich/phone all tally real cost.
 export const STEPS = {
-  search: { cost: 0.12, requireTiming: true, noun: "searches", limit: 10 },
+  // search worst: resolve $0.09 + people ~$0.221 + recruiters ~$0.242 ≈ $0.55.
+  search: { cost: 0.6, requireTiming: true, noun: "searches", limit: 10 },
   alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups", limit: 10 },
   enrich: { cost: 0.59, requireTiming: false, noun: "contact lookups", limit: 10 }, // worst: Apollo .01 + Bytemine .03 + ContactOut incl. phone .55
   profile: { cost: 0.01, requireTiming: false, noun: "profile lookups", limit: 10 },
