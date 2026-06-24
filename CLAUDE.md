@@ -43,7 +43,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - `experience[]` / `education[]` / `bio` — powers "Pull Profile" for ContactOut results at zero additional cost (strings like "Title at Company in YYYY - Present", parsed client-side).
 - `companyMeta` (logo, employees, HQ, overview, founded, revenue) — shown in the hiring banner dropdown.
 
-**Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front.
+**Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front. Keeps the full page (`LIMIT = 25`); UI shows 5 + "show more". Cards support Get contact / Get phone / Pull Profile like people/recruiters.
 
 **Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`):
 - Cheap→rich→last-resort email waterfall: **Apollo `/api/v1/people/match` ($0.01)** → **Bytemine `/contacts/enrich` ($0.03)** → **ContactOut `/v1/people/linkedin` ($0.55, `include_phone:true`)**.
@@ -101,7 +101,7 @@ Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan*
 - `components/ProfileDrawer.tsx` — LinkedIn profile research: bio, career, education, skills, links.
 - `components/BuilderDrawer.tsx` — "How this was built" Orthogonal marketing panel (API calls + unit costs).
 - `components/SessionTabs.tsx` — closeable multi-search tab bar, persisted in sessionStorage.
-- `components/ResultsSection.tsx` — renders a people list; shows the first 5 with a "+ Show N more" reveal (`INITIAL_VISIBLE = 5`). Keyed by session id in `page.tsx` so the reveal resets per tab. `AlumniFinder.tsx` reuses it (alumni finder returns ≤5, so no reveal there). Both thread `onProfile`/`profiledUrls` alongside `onEnrich`/`enrichedUrls`.
+- `components/ResultsSection.tsx` — renders a people list; shows the first 5 with a "+ Show N more" reveal (`INITIAL_VISIBLE = 5`). Keyed so the reveal resets per result set — by session id for people/recruiters (in `page.tsx`), by a per-search counter for alumni (in `AlumniFinder.tsx`). Used by people, recruiters, and alumni alike (all three finders return up to 25). All thread `onProfile`/`profiledUrls` alongside `onEnrich`/`enrichedUrls`, so Get contact / Get phone / Pull Profile work identically across the three.
 
 ## Conventions
 

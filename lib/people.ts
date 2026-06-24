@@ -331,10 +331,11 @@ export function findRecruiters(input: FinderInput): Promise<StepResult> {
   return waterfall("recruiters", steps);
 }
 
-// Alumni from a given school at the company — target 5.
+// Alumni from a given school at the company. Keep the full page (flat $0.05);
+// UI shows 5 + "show more".
 export function findAlumni(input: FinderInput & { school: string }): Promise<StepResult> {
   const { company, domain, school } = input;
-  const LIMIT = 5;
+  const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
   const co = (q: Record<string, unknown>) =>
     contactOutSearch(q).then((r) => fromContactOut(r, LIMIT));
