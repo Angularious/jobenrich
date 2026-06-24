@@ -158,26 +158,68 @@ export function findSimilarPeople(
   input: FinderInput & { jobTitle?: string }
 ): Promise<Person[]> {
   const { company, domain, jobTitle } = input;
+  const loc =
+    input.location && !isVirtualLocation(input.location) ? input.location : null;
   const LIMIT = 5;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<Person[]>> = [];
+
   // Precise: domain-only (when we have one) — tried first.
   if (domain) {
-    if (titles.length)
+    if (titles.length) {
+      // With location filter first (US/local priority).
+      if (loc)
+        steps.push(() =>
+          contactOutSearch({ domain: [domain], job_title: titles, location: [loc] }).then(
+            (r) => fromContactOut(r, LIMIT)
+          )
+        );
       steps.push(() =>
-        contactOutSearch({ domain: [domain], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
+        contactOutSearch({ domain: [domain], job_title: titles }).then((r) =>
+          fromContactOut(r, LIMIT)
+        )
       );
-    steps.push(() => contactOutSearch({ domain: [domain] }).then((r) => fromContactOut(r, LIMIT)));
+    }
+    // Domain only (no title filter) — location-first, then global.
+    if (loc)
+      steps.push(() =>
+        contactOutSearch({ domain: [domain], location: [loc] }).then((r) =>
+          fromContactOut(r, LIMIT)
+        )
+      );
+    steps.push(() =>
+      contactOutSearch({ domain: [domain] }).then((r) => fromContactOut(r, LIMIT))
+    );
   }
+
   // Fallback: company name (primary path when no domain was resolved; safety
   // net for an imperfect domain otherwise).
-  if (titles.length)
+  if (titles.length) {
+    if (loc)
+      steps.push(() =>
+        contactOutSearch({ company: [company], job_title: titles, location: [loc] }).then(
+          (r) => fromContactOut(r, LIMIT)
+        )
+      );
     steps.push(() =>
-      contactOutSearch({ company: [company], job_title: titles }).then((r) => fromContactOut(r, LIMIT))
+      contactOutSearch({ company: [company], job_title: titles }).then((r) =>
+        fromContactOut(r, LIMIT)
+      )
     );
-  steps.push(() => contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT)));
+  }
+  if (loc)
+    steps.push(() =>
+      contactOutSearch({ company: [company], location: [loc] }).then((r) =>
+        fromContactOut(r, LIMIT)
+      )
+    );
   steps.push(() =>
-    coresignalSearch({ experience_company_name: company }).then((r) => fromCoresignal(r, LIMIT, company))
+    contactOutSearch({ company: [company] }).then((r) => fromContactOut(r, LIMIT))
+  );
+  steps.push(() =>
+    coresignalSearch({ experience_company_name: company }).then((r) =>
+      fromCoresignal(r, LIMIT, company)
+    )
   );
   return waterfall("similar", steps);
 }

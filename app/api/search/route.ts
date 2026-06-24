@@ -66,6 +66,7 @@ export async function POST(request: Request) {
     findSimilarPeople({
       company: companyName,
       domain,
+      location: jobLocation,
       ...(searchTitle ? { jobTitle: searchTitle } : {}),
     }),
     findRecruiters({ company: companyName, domain, location: jobLocation }),
