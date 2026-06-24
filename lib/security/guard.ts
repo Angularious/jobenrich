@@ -17,6 +17,7 @@ export const STEPS = {
   search: { cost: 0.12, requireTiming: true, noun: "searches" },
   alumni: { cost: 0.08, requireTiming: true, noun: "alumni lookups" },
   enrich: { cost: 0.1, requireTiming: false, noun: "contact lookups" },
+  profile: { cost: 0.01, requireTiming: false, noun: "profile lookups" },
 } as const;
 
 export type StepName = keyof typeof STEPS;

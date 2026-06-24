@@ -8,6 +8,7 @@ import { AlumniFinder } from "@/components/AlumniFinder";
 import { SampleResults } from "@/components/SampleResults";
 import { HiringAd } from "@/components/HiringAd";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
+import { ProfileDrawer, ProfileData } from "@/components/ProfileDrawer";
 import { PipelineProgress } from "@/components/PipelineProgress";
 import { SessionTabs } from "@/components/SessionTabs";
 import { BuilderDrawer } from "@/components/BuilderDrawer";
@@ -133,6 +134,14 @@ export default function Home() {
 
   const enrichedUrls = new Set(Object.keys(enrichCache));
 
+  const [profileCache, setProfileCache] = useState<Record<string, ProfileData>>({});
+  const [profileTarget, setProfileTarget] = useState<PersonData | null>(null);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const profiledUrls = new Set(Object.keys(profileCache));
+
   useEffect(() => {
     primeSecurity();
   }, []);
@@ -214,6 +223,43 @@ export default function Home() {
     setEnrichTarget(null);
     setEnrichData(null);
     setEnrichError(null);
+  }
+
+  async function handleProfile(person: PersonData) {
+    setProfileTarget(person);
+    setProfileError(null);
+
+    const cached = profileCache[person.linkedinUrl];
+    if (cached) {
+      setProfileData(cached);
+      setProfileLoading(false);
+      return;
+    }
+
+    setProfileData(null);
+    setProfileLoading(true);
+    try {
+      const r = await apiPost<ProfileData & { error?: string }>("/api/profile", {
+        linkedinUrl: person.linkedinUrl,
+      });
+      if (!r.ok) {
+        setProfileError(errorMessage(r, "Profile lookup failed."));
+        return;
+      }
+      const result = r.data as ProfileData;
+      setProfileData(result);
+      setProfileCache((prev) => ({ ...prev, [person.linkedinUrl]: result }));
+    } catch {
+      setProfileError("Profile lookup failed. Try again.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  function closeProfileDrawer() {
+    setProfileTarget(null);
+    setProfileData(null);
+    setProfileError(null);
   }
 
   return (
@@ -318,8 +364,10 @@ export default function Home() {
               people={activeSession.results.people}
               hasError={activeSession.results.peopleError}
               onEnrich={handleEnrich}
+              onProfile={handleProfile}
               variant="blue"
               enrichedUrls={enrichedUrls}
+              profiledUrls={profiledUrls}
               emptyMessage="No matching people surfaced for this company yet. Try a broader role, or check the recruiters below."
             />
             <ResultsSection
@@ -328,8 +376,10 @@ export default function Home() {
               people={activeSession.results.recruiters}
               hasError={activeSession.results.recruitersError}
               onEnrich={handleEnrich}
+              onProfile={handleProfile}
               variant="green"
               enrichedUrls={enrichedUrls}
+              profiledUrls={profiledUrls}
               emptyMessage="No recruiters found at this company — early-stage teams often hire directly, so reach out to the people above."
             />
 
@@ -337,7 +387,9 @@ export default function Home() {
               company={activeSession.results.company}
               domain={activeSession.results.domain}
               onEnrich={handleEnrich}
+              onProfile={handleProfile}
               enrichedUrls={enrichedUrls}
+              profiledUrls={profiledUrls}
             />
 
             {/* Export + builder drawer */}
@@ -360,6 +412,14 @@ export default function Home() {
         loading={enrichLoading}
         error={enrichError}
         onClose={closeDrawer}
+      />
+
+      <ProfileDrawer
+        person={profileTarget}
+        data={profileData}
+        loading={profileLoading}
+        error={profileError}
+        onClose={closeProfileDrawer}
       />
 
       <HiringAd />

@@ -6,6 +6,15 @@ interface OrthogonalPayload {
   query?: Record<string, string | boolean | number>;
 }
 
+export class QuotaExceededError extends Error {
+  constructor() {
+    super("Orthogonal API key quota exceeded");
+    this.name = "QuotaExceededError";
+  }
+}
+
+const QUOTA_PATTERN = /quota|payment_required|spend_limit|limit_exceeded|billing/i;
+
 export async function callOrthogonal<T = unknown>(
   payload: OrthogonalPayload
 ): Promise<T> {
@@ -18,6 +27,8 @@ export async function callOrthogonal<T = unknown>(
     body: JSON.stringify(payload),
   });
 
+  if (res.status === 402) throw new QuotaExceededError();
+
   if (!res.ok) {
     throw new Error(`Orthogonal HTTP error: ${res.status} ${res.statusText}`);
   }
@@ -25,6 +36,7 @@ export async function callOrthogonal<T = unknown>(
   const json = await res.json();
 
   if (!json.success) {
+    if (QUOTA_PATTERN.test(JSON.stringify(json))) throw new QuotaExceededError();
     throw new Error(`Orthogonal API failure: ${JSON.stringify(json)}`);
   }
 

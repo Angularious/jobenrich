@@ -13,8 +13,10 @@ interface ResultsSectionProps {
   people: PersonData[];
   hasError: boolean;
   onEnrich: (person: PersonData) => void;
+  onProfile?: (person: PersonData) => void;
   variant?: keyof typeof VARIANTS;
   enrichedUrls?: Set<string>;
+  profiledUrls?: Set<string>;
   emptyMessage?: string;
 }
 
@@ -24,8 +26,10 @@ export function ResultsSection({
   people,
   hasError,
   onEnrich,
+  onProfile,
   variant = "yellow",
   enrichedUrls,
+  profiledUrls,
   emptyMessage = "Nobody surfaced for this company.",
 }: ResultsSectionProps) {
   const accent = VARIANTS[variant];
@@ -65,9 +69,11 @@ export function ResultsSection({
               key={person.linkedinUrl}
               person={person}
               onEnrich={onEnrich}
+              onProfile={onProfile}
               accent={accent}
               isLast={i === people.length - 1}
               enriched={enrichedUrls?.has(person.linkedinUrl)}
+              profiled={profiledUrls?.has(person.linkedinUrl)}
             />
           ))
         )}

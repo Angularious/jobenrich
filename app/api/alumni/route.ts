@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { findAlumni } from "@/lib/people";
 import { isValidSchool } from "@/lib/validation";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
+import { QuotaExceededError } from "@/lib/orthogonal";
 
 const MAX_COMPANY_LEN = 200;
 const MAX_DOMAIN_LEN = 255;
@@ -44,6 +45,9 @@ export async function POST(request: Request) {
     const alumni = await findAlumni({ company, domain, school });
     return NextResponse.json({ alumni, alumniError: false });
   } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+    }
     console.error("[alumni] Search failed:", err);
     return NextResponse.json({ alumni: [], alumniError: true }, { status: 502 });
   }

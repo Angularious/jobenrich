@@ -10,10 +10,12 @@ interface AlumniFinderProps {
   company: string;
   domain: string | null;
   onEnrich: (person: PersonData) => void;
+  onProfile?: (person: PersonData) => void;
   enrichedUrls?: Set<string>;
+  profiledUrls?: Set<string>;
 }
 
-export function AlumniFinder({ company, domain, onEnrich, enrichedUrls }: AlumniFinderProps) {
+export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrls, profiledUrls }: AlumniFinderProps) {
   const [open, setOpen] = useState(false);
   const [school, setSchool] = useState("");
   const [loading, setLoading] = useState(false);
@@ -119,8 +121,10 @@ export function AlumniFinder({ company, domain, onEnrich, enrichedUrls }: Alumni
           people={alumni}
           hasError={alumniError}
           onEnrich={onEnrich}
+          onProfile={onProfile}
           variant="pink"
           enrichedUrls={enrichedUrls}
+          profiledUrls={profiledUrls}
         />
       )}
     </div>

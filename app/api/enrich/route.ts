@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callOrthogonal } from "@/lib/orthogonal";
+import { callOrthogonal, QuotaExceededError } from "@/lib/orthogonal";
 import { isValidLinkedInProfileUrl } from "@/lib/validation";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 
@@ -270,6 +270,9 @@ export async function POST(request: Request) {
     try {
       r = await lookup(linkedinUrl);
     } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+      }
       console.error(`[enrich] ${name} failed:`, err);
       continue;
     }

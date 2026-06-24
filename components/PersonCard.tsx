@@ -11,9 +11,11 @@ export interface PersonData {
 interface PersonCardProps {
   person: PersonData;
   onEnrich: (person: PersonData) => void;
+  onProfile?: (person: PersonData) => void;
   accent: string; // CSS color for the section's accent square
   isLast?: boolean;
   enriched?: boolean; // contact already pulled — reopen instead of re-fetch
+  profiled?: boolean; // profile already pulled — reopen instantly
 }
 
 function vanitySlug(url: string): string {
@@ -25,7 +27,7 @@ function vanitySlug(url: string): string {
   }
 }
 
-export function PersonCard({ person, onEnrich, accent, isLast, enriched }: PersonCardProps) {
+export function PersonCard({ person, onEnrich, onProfile, accent, isLast, enriched, profiled }: PersonCardProps) {
   const slug = vanitySlug(person.linkedinUrl);
 
   return (
@@ -72,15 +74,27 @@ export function PersonCard({ person, onEnrich, accent, isLast, enriched }: Perso
         )}
       </div>
 
-      {/* Enrich */}
-      <button
-        onClick={() => onEnrich(person)}
-        className={`nb-btn flex-none px-3 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap ${
-          enriched ? "nb-btn-primary" : ""
-        }`}
-      >
-        {enriched ? "Open contact →" : "Get contact →"}
-      </button>
+      {/* Actions */}
+      <div className="flex-none flex flex-col items-end gap-1.5">
+        <button
+          onClick={() => onEnrich(person)}
+          className={`nb-btn px-3 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap ${
+            enriched ? "nb-btn-primary" : ""
+          }`}
+        >
+          {enriched ? "Open contact →" : "Get contact →"}
+        </button>
+        {onProfile && (
+          <button
+            onClick={() => onProfile(person)}
+            className={`font-mono text-[10px] font-bold uppercase tracking-wider whitespace-nowrap hover:text-ink ${
+              profiled ? "text-acc-blue" : "text-dim"
+            }`}
+          >
+            {profiled ? "✓ Research" : "Research →"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

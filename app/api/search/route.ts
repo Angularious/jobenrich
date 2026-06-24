@@ -3,6 +3,7 @@ import { isValidJobUrl } from "@/lib/validation";
 import { resolveJob } from "@/lib/jobResolver";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 import { findSimilarPeople, findRecruiters, simplifyJobTitle } from "@/lib/people";
+import { QuotaExceededError } from "@/lib/orthogonal";
 
 const MAX_URL_LEN = 2000;
 
@@ -43,11 +44,11 @@ export async function POST(request: Request) {
   try {
     resolved = await resolveJob(rawUrl);
   } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+    }
     console.error("[search] Job resolution failed:", err);
-    return NextResponse.json(
-      { error: UNREADABLE_MSG },
-      { status: 502 }
-    );
+    return NextResponse.json({ error: UNREADABLE_MSG }, { status: 502 });
   }
 
   const { jobTitle, companyName, domain, jobLocation } = resolved;
