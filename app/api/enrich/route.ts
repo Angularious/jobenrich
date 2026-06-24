@@ -160,7 +160,11 @@ async function apolloLookup(profile: string): Promise<ProviderResult> {
 
 /* Step 2 — Bytemine /contacts/enrich ($0.03). Work + personal email,
    SMTP-validated. (Bytemine also returns phone numbers; we deliberately
-   ignore them — this site surfaces email only, for privacy.) */
+   ignore them — this site surfaces email only, for privacy.)
+   Bytemine is SLOW — it runs an SMTP/email-finder step and routinely takes
+   17–18s — so it gets a longer timeout than the 12s default (which was
+   aborting it mid-success and dropping the email). */
+const BYTEMINE_TIMEOUT_MS = 25_000;
 interface BytemineData {
   work_email?: string | null;
   email?: string | null;
@@ -172,12 +176,15 @@ interface BytemineData {
   twitter?: string | null;
 }
 async function bytemineLookup(profile: string): Promise<ProviderResult> {
-  const d = await callOrthogonal<BytemineData>({
-    api: "bytemine",
-    path: "/contacts/enrich",
-    method: "POST",
-    body: { linkedin: profile },
-  });
+  const d = await callOrthogonal<BytemineData>(
+    {
+      api: "bytemine",
+      path: "/contacts/enrich",
+      method: "POST",
+      body: { linkedin: profile },
+    },
+    { timeoutMs: BYTEMINE_TIMEOUT_MS }
+  );
   if (!d) return EMPTY;
   const emails = dedupe([d.work_email, d.email, d.personal_email].filter(isRealEmail));
   const links: EnrichLink[] = [];
