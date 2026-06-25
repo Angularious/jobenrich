@@ -263,35 +263,42 @@ export function findSimilarPeople(
   const LIMIT = 25;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<StepResult>> = [];
-  // Each ContactOut step: drop ex-employees (hard), then sort in-country first
-  // (soft). The primary domain/country-filtered steps are already clean so these
-  // are no-ops there; they tighten the looser name / role-agnostic fallbacks.
-  const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => {
+  // `enforce` = enforce the job's country. When set (and we know the country) the
+  // query gets ContactOut's `location` filter AND a hard post-filter on the
+  // profile `country` field. The API location filter isn't just a sort — it
+  // changes WHICH 25 profiles come back (e.g. Coca-Cola "company+title+US"
+  // returns 25 US vs 14 US unfiltered), so country-enforced steps surface far
+  // more in-country people than post-filtering an unfiltered page would.
+  const co = (q: Record<string, unknown>, enforce: boolean) =>
+    contactOutSearch(enforce && country ? { ...q, location: [country] } : q).then((r) => {
       const { people, companyMeta } = fromContactOut(r, LIMIT);
-      const tightened = inCountryFirst(dropExEmployees(people, company, domain), biasCountry);
-      return { people: tightened, companyMeta, cost: 0.05 };
+      let out = dropExEmployees(people, company, domain);
+      if (enforce && country) out = out.filter((p) => p.country && sameCountry(p.country, country));
+      return { people: inCountryFirst(out, biasCountry), companyMeta, cost: 0.05 };
     });
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
 
-  // Tightened to ≤4 ContactOut calls ($0.20 worst, was 8/$0.40). We keep only
-  // the high-value steps: role-matched at the exact domain (location-first),
-  // role-matched by company name, then ONE role-agnostic fallback so we still
-  // show *someone* at the company. The dropped steps (domain+location,
-  // company+title+location, company+location) were either role-agnostic-but-
-  // local or redundant — low value for the cost. Location stays on the primary
-  // domain+title step where international noise matters most.
-  if (domain && titles.length) {
-    if (country) steps.push(() => co({ domain: [domain], job_title: titles, location: [country] }));
-    steps.push(() => co({ domain: [domain], job_title: titles }));
+  // ORDER MATTERS: all country-enforced steps run BEFORE any country-relaxed one.
+  // The waterfall fires the next step only on zero results, so an unfiltered step
+  // that returns out-of-country people would otherwise win and stop before a
+  // later in-country step ever runs (this is the bug that made Coca-Cola's
+  // recruiters all Philippines). Same call count as before — reordered + filtered.
+  if (country) {
+    // Tier 1 — in-country, role-matched (domain first, then company name).
+    if (domain && titles.length) steps.push(() => co({ domain: [domain], job_title: titles }, true));
+    if (titles.length) steps.push(() => co({ company: [company], job_title: titles }, true));
+    // Tier 2 — role-matched but country-relaxed: a person in the exact role
+    // abroad is still a useful "similar person" if nobody in-country was found.
+    if (titles.length) steps.push(() => co({ company: [company], job_title: titles }, false));
+    // Tier 3 — role-agnostic but back to in-country: someone at the company here.
+    steps.push(() => co(domain ? { domain: [domain] } : { company: [company] }, true));
+  } else {
+    // No usable country (remote / unparseable): role-matched, then role-agnostic.
+    if (domain && titles.length) steps.push(() => co({ domain: [domain], job_title: titles }, false));
+    if (titles.length) steps.push(() => co({ company: [company], job_title: titles }, false));
+    steps.push(() => co(domain ? { domain: [domain] } : { company: [company] }, false));
   }
-  if (titles.length) {
-    steps.push(() => co({ company: [company], job_title: titles }));
-  }
-  // Role-agnostic last resort: the exact domain (no namesake risk) when we have
-  // one, otherwise the company name. Beats returning nobody.
-  steps.push(() => co(domain ? { domain: [domain] } : { company: [company] }));
   steps.push(() => cs({ experience_company_name: company }));
   return waterfall("similar", steps);
 }
@@ -386,12 +393,14 @@ function dropExEmployees(
 // the company name + Coresignal only if that found nobody (so an imperfect
 // domain no longer means an empty recruiter list).
 //
-// When the job's COUNTRY is known (e.g. "United States"), each ContactOut step
-// is tried WITH the country filter first — recruiters are spread across the
-// country/remote, so a country filter (not the exact city) keeps results
-// in-region without missing everyone. If a country-filtered step returns
-// nobody the waterfall falls through to the same step unfiltered, so a role in
-// a country ContactOut doesn't index well never blocks results entirely.
+// COUNTRY ENFORCEMENT (the Coca-Cola fix): when the job's country is known, ALL
+// country-enforced steps run before any country-relaxed one. Big companies index
+// recruiters at offshore shared-services hubs (e.g. Coca-Cola's recruiters under
+// `coca-colacompany.com` are a Manila team) — so `domain+title` UNFILTERED
+// returned 24 Philippines recruiters and the waterfall stopped there, before the
+// `company+title+US` step that returns 25 US recruiters ever ran. Enforced steps
+// add ContactOut's `location` filter (which surfaces more in-country people, not
+// just reorders) AND a hard post-filter on the profile `country` field.
 export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const { company, domain } = input;
   const country = locationCountry(input.location);
@@ -399,23 +408,28 @@ export function findRecruiters(input: FinderInput): Promise<StepResult> {
   // Keep the full page (flat $0.05); UI shows 5 + "show more".
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
-  // Drop ex-employees (hard) + sort in-country first (soft), same as people.
-  const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => {
+  const co = (q: Record<string, unknown>, enforce: boolean) =>
+    contactOutSearch(enforce && country ? { ...q, location: [country] } : q).then((r) => {
       const { people, companyMeta } = fromContactOut(r, LIMIT);
-      const tightened = inCountryFirst(dropExEmployees(people, company, domain), biasCountry);
-      return { people: tightened, companyMeta, cost: 0.05 };
+      let out = dropExEmployees(people, company, domain);
+      if (enforce && country) out = out.filter((p) => p.country && sameCountry(p.country, country));
+      return { people: inCountryFirst(out, biasCountry), companyMeta, cost: 0.05 };
     });
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
 
-  // Domain-first; within each, country-filtered before unfiltered.
-  if (domain) {
-    if (country) steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES, location: [country] }));
-    steps.push(() => co({ domain: [domain], job_title: RECRUITER_TITLES }));
+  const T = RECRUITER_TITLES;
+  if (country) {
+    // In-country first: domain (no namesake risk) → company name.
+    if (domain) steps.push(() => co({ domain: [domain], job_title: T }, true));
+    steps.push(() => co({ company: [company], job_title: T }, true));
+    // Last resort: country-relaxed so a company with only offshore recruiters in
+    // ContactOut still shows someone rather than an empty list.
+    steps.push(() => co({ company: [company], job_title: T }, false));
+  } else {
+    if (domain) steps.push(() => co({ domain: [domain], job_title: T }, false));
+    steps.push(() => co({ company: [company], job_title: T }, false));
   }
-  if (country) steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES, location: [country] }));
-  steps.push(() => co({ company: [company], job_title: RECRUITER_TITLES }));
   steps.push(() => cs({ experience_company_name: company, experience_title: "Recruiter" }));
   steps.push(() => cs({ experience_company_name: company }));
   return waterfall("recruiters", steps);
