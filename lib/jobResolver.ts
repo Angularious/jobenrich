@@ -23,7 +23,7 @@ export interface ResolvedJob {
   companyName: string;
   domain: string | null;
   jobLocation: string | null;
-  source: "linkedin" | "jsonld" | "llm" | "workday";
+  source: "linkedin" | "jsonld" | "llm" | "workday" | "google";
   cost: number; // real USD spent resolving this URL (for the daily-cap ledger)
 }
 
@@ -396,6 +396,41 @@ async function resolveWorkday(rawUrl: string): Promise<ResolvedJob | null> {
   }
 }
 
+/* ── Google Careers branch (slug parse) ──────────────────────────────── */
+
+// Serper refuses to scrape google.com ("Invalid 'url' parameter - Google is not
+// allowed"), so the generic path can never resolve Google's own careers
+// postings. We don't need it: the company is Google, and the title is in the URL
+// slug (/jobs/results/{id}-{title-slug}/). Parse it directly — no network call,
+// deterministic, free. (Location isn't in the URL → null → finder defaults to
+// US, same as any role with no stated country.)
+function resolveGoogleCareers(rawUrl: string): ResolvedJob | null {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  // google.com/about/careers/… (current) or careers.google.com/… (legacy) —
+  // both are Google's own careers site with the same /jobs/results/{id}-{slug} shape.
+  const onGoogleCareers =
+    (/^(www\.)?google\.com$/i.test(u.hostname) && /\/about\/careers\//i.test(u.pathname)) ||
+    /^careers\.google\.com$/i.test(u.hostname);
+  if (!onGoogleCareers) return null;
+  const m = u.pathname.match(/\/jobs\/results\/\d+-([^/]+)/);
+  let jobTitle: string | null = null;
+  if (m) {
+    let slug = m[1];
+    try {
+      slug = decodeURIComponent(slug);
+    } catch {
+      /* malformed %-encoding — use the raw slug */
+    }
+    jobTitle = slug.replace(/-/g, " ").trim() || null;
+  }
+  return { jobTitle, companyName: "Google", domain: "google.com", jobLocation: null, source: "google", cost: 0 };
+}
+
 /** Resolve any job/careers URL → { jobTitle, companyName, domain }. Throws on
  *  a hard upstream failure (caller maps to 502); returns an empty companyName
  *  when the page yields nothing identifiable (caller maps to 422). */
@@ -407,6 +442,9 @@ export async function resolveJob(rawUrl: string): Promise<ResolvedJob> {
     // generic scraper would just hit the auth wall, so don't spend on it.
     return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin", cost: 0 };
   }
+  // Google careers: Serper blocks google.com, but the slug carries the title.
+  const goog = resolveGoogleCareers(rawUrl);
+  if (goog) return goog;
   // Workday: try the deterministic JSON API first, fall back to the scraper.
   if (WORKDAY_HOST.test(hostFromUrl(rawUrl) ?? "")) {
     const wd = await resolveWorkday(rawUrl);
