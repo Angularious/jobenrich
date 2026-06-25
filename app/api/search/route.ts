@@ -85,14 +85,23 @@ export async function POST(request: Request) {
       (similar.status === "fulfilled" ? similar.value.companyMeta : null) ??
       (recruitersResult.status === "fulfilled" ? recruitersResult.value.companyMeta : null);
 
+    const recruiters = recruitersResult.status === "fulfilled" ? recruitersResult.value.people : [];
+    // De-dupe across lists: the people finder's role-agnostic fallback can surface
+    // the same recruiters the recruiter list already shows. Recruiters is the more
+    // specific match, so drop those from "people to talk to" (keep them as recruiters).
+    const recruiterUrls = new Set(recruiters.map((r) => r.linkedinUrl));
+    const people = (similar.status === "fulfilled" ? similar.value.people : []).filter(
+      (p) => !recruiterUrls.has(p.linkedinUrl)
+    );
+
     return NextResponse.json({
       jobTitle,
       company: companyName,
       domain,
       companyMeta,
-      people: similar.status === "fulfilled" ? similar.value.people : [],
+      people,
       peopleError: similar.status === "rejected",
-      recruiters: recruitersResult.status === "fulfilled" ? recruitersResult.value.people : [],
+      recruiters,
       recruitersError: recruitersResult.status === "rejected",
     });
   } finally {
