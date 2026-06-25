@@ -52,7 +52,7 @@ function collectStrings(val: unknown, keyHint: "email"): string[] {
     }
     if (typeof v === "object") {
       const o = v as Record<string, unknown>;
-      const direct = o.value ?? o[keyHint] ?? o.address ?? o.number;
+      const direct = o.value ?? o[keyHint];
       if (typeof direct === "string") out.push(direct);
     }
   };
@@ -65,6 +65,13 @@ function dedupe(list: string[]): string[] {
     .map((s) => s.trim())
     .filter(Boolean)
     .filter((v, i, a) => a.indexOf(v) === i);
+}
+
+// Emails are case-insensitive — lowercase before de-duping so "A@x.com" and
+// "a@x.com" collapse to one. Kept separate from dedupe(), which also handles
+// case-sensitive values (e.g. GitHub URLs) that must not be lowercased.
+function dedupeEmails(list: string[]): string[] {
+  return dedupe(list.map((e) => e.toLowerCase()));
 }
 
 function cleanStr(v: unknown): string | null {
@@ -137,7 +144,7 @@ async function apolloLookup(profile: string): Promise<ProviderResult> {
   });
   const p = raw?.person;
   if (!p) return EMPTY;
-  const emails = dedupe(
+  const emails = dedupeEmails(
     [
       // Primary email: check both format and Apollo's status signal.
       isRealEmail(p.email) && isValidEmailStatus(p.email_status) ? p.email : null,
@@ -186,7 +193,7 @@ async function bytemineLookup(profile: string): Promise<ProviderResult> {
     { timeoutMs: BYTEMINE_TIMEOUT_MS }
   );
   if (!d) return EMPTY;
-  const emails = dedupe([d.work_email, d.email, d.personal_email].filter(isRealEmail));
+  const emails = dedupeEmails([d.work_email, d.email, d.personal_email].filter(isRealEmail));
   const links: EnrichLink[] = [];
   const tw = asUrl(d.twitter);
   if (tw) links.push({ label: "Twitter / X", url: tw });
@@ -206,11 +213,14 @@ async function contactOutLookup(profile: string): Promise<ProviderResult> {
     api: "contactout",
     path: "/v1/people/linkedin",
     method: "GET",
-    query: { profile, include_phone: false },
+    // GET query values are validated as strings by /v1/run — a boolean is
+    // rejected ("Expected string, received boolean"), which silently broke this
+    // entire step. Pass the string "false" (still email-only, never phone).
+    query: { profile, include_phone: "false" },
   });
   // ContactOut nests contact data under `profile` on some responses.
   const root = (raw?.profile as Record<string, unknown>) ?? raw ?? {};
-  const emails = dedupe(
+  const emails = dedupeEmails(
     [
       ...collectStrings(root.work_email, "email"),
       ...collectStrings(root.personal_email, "email"),
