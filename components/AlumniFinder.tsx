@@ -6,6 +6,15 @@ import { ResultsSection } from "./ResultsSection";
 import { PipelineProgress } from "./PipelineProgress";
 import type { PersonData } from "./PersonCard";
 
+// A completed alumni search, persisted on the owning SearchSession so results
+// survive tab switches (the finder is keyed per session → remounts on switch
+// and restores from this).
+export interface SavedAlumni {
+  people: PersonData[];
+  school: string;
+  error: boolean;
+}
+
 interface AlumniFinderProps {
   company: string;
   domain: string | null;
@@ -13,15 +22,24 @@ interface AlumniFinderProps {
   onProfile?: (person: PersonData) => void;
   enrichedUrls?: Set<string>;
   profiledUrls?: Set<string>;
+  // Persisted result for THIS session (restored on tab switch) + a setter to
+  // save a new search back onto the session.
+  initial?: SavedAlumni | null;
+  onResult: (r: SavedAlumni) => void;
 }
 
-export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrls, profiledUrls }: AlumniFinderProps) {
-  const [open, setOpen] = useState(false);
-  const [school, setSchool] = useState("");
+export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrls, profiledUrls, initial, onResult }: AlumniFinderProps) {
+  // Initialize from any persisted result for this session (the component is
+  // keyed by session id in page.tsx, so these run fresh on every tab switch).
+  const [open, setOpen] = useState(() => !!initial);
+  const [school, setSchool] = useState(initial?.school ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [alumni, setAlumni] = useState<PersonData[] | null>(null);
-  const [alumniError, setAlumniError] = useState(false);
+  const [alumni, setAlumni] = useState<PersonData[] | null>(initial?.people ?? null);
+  const [alumniError, setAlumniError] = useState(initial?.error ?? false);
+  // The school that produced the shown results (so the hint stays correct even
+  // while the user types a new school into the input before searching).
+  const [resultSchool, setResultSchool] = useState(initial?.school ?? "");
   // Bumped on each successful search so the results' "show more" reveal resets.
   const [searchSeq, setSearchSeq] = useState(0);
 
@@ -42,9 +60,14 @@ export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrl
         setError(errorMessage(r, "Couldn't search alumni."));
         return;
       }
-      setAlumni(r.data.alumni ?? []);
-      setAlumniError(Boolean(r.data.alumniError));
+      const people = r.data.alumni ?? [];
+      const err = Boolean(r.data.alumniError);
+      setAlumni(people);
+      setAlumniError(err);
+      setResultSchool(school.trim());
       setSearchSeq((n) => n + 1);
+      // Persist onto the session so it survives switching tabs.
+      onResult({ people, school: school.trim(), error: err });
     } catch {
       setError("Request failed. Check your connection.");
     } finally {
@@ -121,7 +144,7 @@ export function AlumniFinder({ company, domain, onEnrich, onProfile, enrichedUrl
         <ResultsSection
           key={`alumni-${searchSeq}`}
           title="Alumni"
-          hint={`from ${school.trim()}`}
+          hint={`from ${resultSchool}`}
           people={alumni}
           hasError={alumniError}
           onEnrich={onEnrich}
