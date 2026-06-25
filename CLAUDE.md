@@ -51,7 +51,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 
 **Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front. Keeps the full page (`LIMIT = 25`); UI shows 5 + "show more". Cards support Get contact / Pull Profile like people/recruiters.
 
-**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — **email only; the site never surfaces phone numbers (privacy decision)**. Three providers: **Apollo `/api/v1/people/match` ($0.01, fast)**, **Bytemine `/contacts/enrich` ($0.03, but SLOW — ~18s email-finder, 25s timeout)**, **ContactOut `/v1/people/linkedin` ($0.33, fast, `include_phone:false`)**. Each step fires only if no email yet.
+**Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — **email only; the site never surfaces phone numbers (privacy decision)**. Three providers: **Apollo `/api/v1/people/match` ($0.01, fast)**, **Bytemine `/contacts/enrich` ($0.03, but SLOW — ~18s email-finder, 25s timeout)**, **ContactOut `/v1/people/linkedin` ($0.33, fast, `include_phone:"false"`)**. Each step fires only if no email yet.
 - **Smart ordering by speed:** Apollo always first. When the search said ContactOut has the email (`contactHint.email === true`), order is Apollo → **ContactOut** (fast) → Bytemine — so we get the email in 1–3s instead of waiting ~18s on Bytemine. Otherwise Apollo → **Bytemine** (cheap) → ContactOut. (Bytemine *is* the only source for some contacts — it returns personal emails ContactOut lacks — so it stays in the chain.)
 - ContactOut step is **skipped entirely** when `contactHint.email=false` (search confirmed it has none → Bytemine is the only hope, slow but unavoidable).
 - Apollo's `email_status` is checked — `invalid`/`do_not_email`/`bounced`/`spam` primaries are dropped.
@@ -85,6 +85,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - **Full session:** ~$0.20–0.27 typical · ~$3.5 absolute worst (search + 8 ContactOut enriches). Bounded per visitor by the 10/step/day rate limit; the $40 global cap reserves each step's worst case.
 
 > ContactOut `/v1/people/search` is `reveal_info ? 25*0.75 : 0.05` — always pass `reveal_info: false`. `/v1/people/linkedin` is `include_phone ? 0.55 : 0.33` — the enrich route always uses `false` (email only, never phone). ScrapeGraphAI stealth adds +$0.025.
+> **GOTCHA:** `/v1/people/linkedin` is a **GET** call, and `/v1/run` validates GET `query` values as **strings** — pass `include_phone: "false"` (the **string**), not the boolean `false`, which is rejected with `400 "Expected string, received boolean"` and silently breaks the whole ContactOut enrich step. (POST `body` params like `reveal_info: false` are fine as booleans; only GET `query` is string-validated.)
 
 ## Scaling / deployment
 
@@ -98,7 +99,7 @@ Deployed to Vercel project **jobenrich** (`jobenrich.vercel.app`), **Hobby plan*
 - `lib/validation.ts` — `canonicalizeLinkedInJobUrl` (handles both bare ID and slug URLs), `isValidLinkedInProfileUrl`, `isValidJobUrl`, `isValidSchool`.
 - `lib/security/guard.ts` — steps: `search`, `alumni`, `enrich`, `profile`.
 - `app/api/search/route.ts` — resolves job → runs two waterfalls → returns `{ companyMeta, people, recruiters, ... }`.
-- `app/api/enrich/route.ts` — email-only waterfall (Apollo→Bytemine→ContactOut, `include_phone:false`); skips ContactOut when `contactHint.email=false`; filters Apollo invalid email_status. Never returns phone numbers.
+- `app/api/enrich/route.ts` — email-only waterfall (Apollo→Bytemine→ContactOut, `include_phone:"false"`); skips ContactOut when `contactHint.email=false`; filters Apollo invalid email_status. Never returns phone numbers.
 - `app/api/profile/route.ts` — Apollo `people/match` ($0.01) for Coresignal results only; ContactOut results use free `searchProfile` data client-side.
 - `components/PersonCard.tsx` — `SearchProfile` + `PersonData` types; "Get contact" + "Pull Profile" actions; responsive button labels (`sm:` prefix for full text).
 - `components/EnrichDrawer.tsx` — ■ Email section (lists emails or "No email found.") + ■ Around the web links. Email only — no phone UI.
