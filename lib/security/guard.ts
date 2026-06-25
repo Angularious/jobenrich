@@ -15,7 +15,7 @@ const MIN_FORM_MS = 1500;
 export const STEPS = {
   // search worst: resolve $0.09 + people ~$0.221 + recruiters ~$0.242 ≈ $0.55.
   search: { cost: 0.6, requireTiming: true, noun: "searches", limit: 10 },
-  alumni: { cost: 0.1, requireTiming: true, noun: "alumni lookups", limit: 10 },
+  alumni: { cost: 0.13, requireTiming: true, noun: "alumni lookups", limit: 10 }, // worst: ContactOut domain .05 + company .05 + Coresignal .021 ≈ $0.121
   enrich: { cost: 0.37, requireTiming: false, noun: "contact lookups", limit: 10 }, // worst: Apollo .01 + Bytemine .03 + ContactOut .33 (email only)
   profile: { cost: 0.01, requireTiming: false, noun: "profile lookups", limit: 10 },
 } as const;

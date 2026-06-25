@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiPost, primeSecurity, errorMessage } from "@/lib/security/client";
 import { SearchForm } from "@/components/SearchForm";
 import { ResultsSection } from "@/components/ResultsSection";
-import { AlumniFinder } from "@/components/AlumniFinder";
+import { AlumniFinder, type SavedAlumni } from "@/components/AlumniFinder";
 import { SampleResults } from "@/components/SampleResults";
 import { HiringAd } from "@/components/HiringAd";
 import { EnrichDrawer, EnrichData } from "@/components/EnrichDrawer";
@@ -31,6 +31,8 @@ interface SearchSession {
   id: string;
   jobUrl: string;
   results: SearchResults;
+  // Last alumni search for this tab, persisted so it survives tab switches.
+  alumni?: SavedAlumni | null;
 }
 
 const SESSION_KEY = "jobenrich_sessions";
@@ -565,13 +567,23 @@ export default function Home() {
               emptyMessage="No recruiters found at this company — early-stage teams often hire directly, so reach out to the people above."
             />
 
+            {/* key per session so the finder remounts on tab switch and restores
+                THIS tab's saved alumni (via `initial`) instead of leaking another
+                tab's results; `onResult` persists a new search back onto the session. */}
             <AlumniFinder
+              key={activeSession.id}
               company={activeSession.results.company}
               domain={activeSession.results.domain}
               onEnrich={handleEnrich}
               onProfile={handleProfile}
               enrichedUrls={enrichedUrls}
               profiledUrls={profiledUrls}
+              initial={activeSession.alumni ?? null}
+              onResult={(r) =>
+                setSessions((prev) =>
+                  prev.map((s) => (s.id === activeSession.id ? { ...s, alumni: r } : s))
+                )
+              }
             />
 
             {/* Export + builder drawer */}

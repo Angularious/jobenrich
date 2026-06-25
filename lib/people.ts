@@ -479,8 +479,16 @@ export function findAlumni(input: FinderInput & { school: string }): Promise<Ste
       const { people, companyMeta } = fromContactOut(r, LIMIT);
       return { people: atTargetCompany(people, company), companyMeta, cost: 0.05 };
     });
+  const cs = (q: Record<string, unknown>) =>
+    coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
   if (domain) steps.push(() => co({ domain: [domain], education: [school] }));
   steps.push(() => co({ company: [company], education: [school] }));
+  // Coresignal fallback (fires only if ContactOut found no alumni): ContactOut
+  // doesn't index small/new companies (e.g. early startups — measured: a tiny
+  // startup returns 0 for company:[…] in ContactOut but 5 employees in
+  // Coresignal). Coresignal's filter API supports education_institution_name, so
+  // we still constrain by school; fromCoresignal prefers current-company matches.
+  steps.push(() => cs({ experience_company_name: company, education_institution_name: school }));
   return waterfall("alumni", steps);
 }
 
