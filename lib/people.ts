@@ -256,8 +256,9 @@ export function findSimilarPeople(
   input: FinderInput & { jobTitle?: string }
 ): Promise<StepResult> {
   const { company, domain, jobTitle } = input;
-  const country = locationCountry(input.location);
-  const biasCountry = sortCountry(input.location);
+  // One country value, used for BOTH the location filter and the sort: the role's
+  // country, or US by default (null only for explicitly remote roles).
+  const country = targetCountry(input.location);
   // ContactOut returns a page of up to ~25 profiles for the same flat $0.05, so
   // we keep the whole page (the UI shows 5 + a "show more"). No extra cost.
   const LIMIT = 25;
@@ -274,7 +275,7 @@ export function findSimilarPeople(
       const { people, companyMeta } = fromContactOut(r, LIMIT);
       let out = dropExEmployees(people, company, domain);
       if (enforce && country) out = out.filter((p) => p.country && sameCountry(p.country, country));
-      return { people: inCountryFirst(out, biasCountry), companyMeta, cost: 0.05 };
+      return { people: inCountryFirst(out, country), companyMeta, cost: 0.05 };
     });
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
@@ -335,11 +336,13 @@ function locationCountry(loc: string | null | undefined): string | null {
   return parts.length >= 2 ? parts[parts.length - 1] : null;
 }
 
-// The country to bias the in-country-first sort toward. Same as locationCountry,
-// but defaults to the US when the job location is missing/unparseable (per the
-// "default to US" rule) — EXCEPT for explicitly remote roles, which get no bias
-// (a remote job shouldn't favour any one country).
-function sortCountry(loc: string | null | undefined): string | null {
+// The country to enforce (and sort by) for people/recruiters. Rule: use the
+// role's country if it names one; otherwise DEFAULT TO US (a job that doesn't
+// specify a non-US location is treated as US). The only exception is an
+// explicitly remote role, which names no place and shouldn't be pinned to any
+// country → null (no enforcement, no bias). US isn't hardcoded — a role that
+// states a non-US country (e.g. "London, UK") enforces that country instead.
+function targetCountry(loc: string | null | undefined): string | null {
   if (loc && isVirtualLocation(loc)) return null;
   return locationCountry(loc) ?? "United States";
 }
@@ -403,8 +406,8 @@ function dropExEmployees(
 // just reorders) AND a hard post-filter on the profile `country` field.
 export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const { company, domain } = input;
-  const country = locationCountry(input.location);
-  const biasCountry = sortCountry(input.location);
+  // Role's country, or US by default (null only for explicitly remote roles).
+  const country = targetCountry(input.location);
   // Keep the full page (flat $0.05); UI shows 5 + "show more".
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
@@ -413,7 +416,7 @@ export function findRecruiters(input: FinderInput): Promise<StepResult> {
       const { people, companyMeta } = fromContactOut(r, LIMIT);
       let out = dropExEmployees(people, company, domain);
       if (enforce && country) out = out.filter((p) => p.country && sameCountry(p.country, country));
-      return { people: inCountryFirst(out, biasCountry), companyMeta, cost: 0.05 };
+      return { people: inCountryFirst(out, country), companyMeta, cost: 0.05 };
     });
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
