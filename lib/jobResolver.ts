@@ -38,6 +38,16 @@ const ATS_HOSTS =
 const NON_COMPANY_HOSTS =
   /(^|\.)(linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|crunchbase\.com|glassdoor\.com|indeed\.com|youtube\.com)$/i;
 
+// Hosts that consistently DEFEAT automated reading — consumer aggregators with
+// anti-bot walls (Serper hangs to the scrape timeout) and login-gated
+// application portals. We fast-fail these to the UNREADABLE guidance instead of
+// burning ~25s + $0.02 on a scrape that won't succeed. (Measured this session:
+// indeed/glassdoor/ziprecruiter time out; ADP/iCIMS/Taleo are login-gated.)
+// IMPORTANT: this is NOT the ATS_HOSTS list — Greenhouse/Lever/Ashby/Workable/
+// SmartRecruiters scrape fine and Workday has an API, so they must stay OFF here.
+const UNSCRAPEABLE_HOSTS =
+  /(^|\.)(indeed\.com|glassdoor\.com|ziprecruiter\.com|icims\.com|taleo\.net|adp\.com)$/i;
+
 // Unambiguous legal forms — safe to strip even without a comma.
 const LEGAL_HARD =
   /[,.]?\s+(incorporated|inc|llc|l\.l\.c\.|ltd|limited|corp|corporation|gmbh|plc|pte\.?\s*ltd|pty\.?\s*ltd|llp|s\.?a\.?r\.?l\.?|srl)\.?$/i;
@@ -445,6 +455,12 @@ export async function resolveJob(rawUrl: string): Promise<ResolvedJob> {
   // Google careers: Serper blocks google.com, but the slug carries the title.
   const goog = resolveGoogleCareers(rawUrl);
   if (goog) return goog;
+  // Known-unscrapeable hosts (anti-bot aggregators, login-gated portals): skip
+  // the doomed ~25s scrape and signal "unreadable" instantly (caller → 422 +
+  // guidance to use LinkedIn/Greenhouse/Workday/a careers page). cost 0.
+  if (UNSCRAPEABLE_HOSTS.test(hostFromUrl(rawUrl) ?? "")) {
+    return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm", cost: 0 };
+  }
   // Workday: try the deterministic JSON API first, fall back to the scraper.
   if (WORKDAY_HOST.test(hostFromUrl(rawUrl) ?? "")) {
     const wd = await resolveWorkday(rawUrl);
