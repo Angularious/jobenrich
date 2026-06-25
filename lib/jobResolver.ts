@@ -23,7 +23,7 @@ export interface ResolvedJob {
   companyName: string;
   domain: string | null;
   jobLocation: string | null;
-  source: "linkedin" | "jsonld" | "llm";
+  source: "linkedin" | "jsonld" | "llm" | "workday";
   cost: number; // real USD spent resolving this URL (for the daily-cap ledger)
 }
 
@@ -303,16 +303,95 @@ async function resolveGeneric(url: string): Promise<ResolvedJob> {
   return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm", cost };
 }
 
+/* ── Workday branch (public CXS JSON API) ────────────────────────────── */
+
+// Workday career sites are JS SPAs that the generic scraper renders only
+// flakily (intermittent "Scraping failed" 500s). Every Workday tenant exposes a
+// public, unauthenticated JSON API for a posting, which is deterministic and
+// free — so we hit it directly. This is the one place we bypass callOrthogonal:
+// it's a public ATS endpoint, not paid/Orthogonal provider data, and Serper
+// refuses JSON URLs (400) so it can't be proxied through the wrapper.
+const WORKDAY_HOST = /(^|\.)myworkdayjobs\.com$/i;
+
+interface WorkdayCxs {
+  jobPostingInfo?: {
+    title?: string | null;
+    location?: string | null;
+    country?: { descriptor?: string | null } | null;
+  } | null;
+  hiringOrganization?: { name?: string | null } | null;
+}
+
+/** Map a Workday posting URL to its CXS JSON endpoint:
+ *  https://{host}/[locale/]{site}/(job|details)/{jobpath}
+ *    → https://{host}/wday/cxs/{tenant}/{site}/job/{jobpath}
+ *  Returns null if the URL isn't a recognizable Workday job posting. */
+export function workdayCxsUrl(rawUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!WORKDAY_HOST.test(u.hostname)) return null;
+  const tenant = u.hostname.split(".")[0];
+  const parts = u.pathname.split("/").filter(Boolean);
+  // The site segment sits directly before the "job"/"details" marker (any
+  // leading locale like "en-US" is thus skipped automatically).
+  const marker = parts.findIndex((p) => p === "job" || p === "details");
+  if (marker < 1) return null;
+  const site = parts[marker - 1];
+  const jobPath = parts.slice(marker + 1).join("/");
+  if (!tenant || !site || !jobPath) return null;
+  return `${u.origin}/wday/cxs/${tenant}/${site}/job/${jobPath}`;
+}
+
+async function resolveWorkday(rawUrl: string): Promise<ResolvedJob | null> {
+  const cxs = workdayCxsUrl(rawUrl);
+  if (!cxs) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 8_000);
+  try {
+    const res = await fetch(cxs, { headers: { Accept: "application/json" }, signal: ac.signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as WorkdayCxs;
+    const info = data?.jobPostingInfo;
+    const companyRaw = clean(data?.hiringOrganization?.name);
+    if (!companyRaw) return null; // no company → let the generic scraper try
+    // Combine the location label with the country so the people finder can
+    // country-ify it (e.g. "Waltham Office (POST), United States of America").
+    const jobLocation =
+      [clean(info?.location), clean(info?.country?.descriptor)].filter(Boolean).join(", ") || null;
+    return {
+      jobTitle: clean(info?.title),
+      companyName: normalizeCompany(companyRaw),
+      domain: pickDomain(null, rawUrl), // host is the ATS → null; finder uses name
+      jobLocation,
+      source: "workday",
+      cost: 0,
+    };
+  } catch {
+    return null; // any failure → fall back to the generic scraper
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Resolve any job/careers URL → { jobTitle, companyName, domain }. Throws on
  *  a hard upstream failure (caller maps to 502); returns an empty companyName
  *  when the page yields nothing identifiable (caller maps to 422). */
-export function resolveJob(rawUrl: string): Promise<ResolvedJob> {
+export async function resolveJob(rawUrl: string): Promise<ResolvedJob> {
   if (isLinkedInHost(rawUrl)) {
     const canonical = canonicalizeLinkedInJobUrl(rawUrl);
     if (canonical) return resolveLinkedIn(canonical);
     // A LinkedIn URL that isn't a job posting (profile, /company, feed) — the
     // generic scraper would just hit the auth wall, so don't spend on it.
-    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin", cost: 0 });
+    return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin", cost: 0 };
+  }
+  // Workday: try the deterministic JSON API first, fall back to the scraper.
+  if (WORKDAY_HOST.test(hostFromUrl(rawUrl) ?? "")) {
+    const wd = await resolveWorkday(rawUrl);
+    if (wd) return wd;
   }
   return resolveGeneric(rawUrl);
 }
