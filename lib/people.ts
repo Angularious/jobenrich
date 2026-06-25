@@ -20,6 +20,11 @@ export interface Person {
   profilePictureUrl: string | null;
   source: "contactout" | "coresignal";
   searchProfile?: SearchProfile;
+  // Relevance signals captured free from the ContactOut search response. Used
+  // server-side to drop ex-employees and sort in-country people first; the UI
+  // doesn't render them. Absent on Coresignal results (the preview lacks them).
+  country?: string | null;
+  currentCompany?: { name: string | null; domain: string | null };
 }
 
 // Recruiter / people-ops titles, broad enough to catch how teams self-describe.
@@ -66,6 +71,7 @@ interface ContactOutProfile {
   education?: string[];
   contact_availability?: ContactOutAvailability;
   company?: ContactOutCompany;
+  country?: string; // top-level person country, e.g. "United States" / "India"
 }
 interface ContactOutSearchResponse {
   profiles?: Record<string, ContactOutProfile>;
@@ -133,6 +139,13 @@ function fromContactOut(
         profilePictureUrl: p.profile_picture_url ?? null,
         source: "contactout" as const,
         searchProfile,
+        country: (typeof p.country === "string" && p.country.trim()) ? p.country.trim() : null,
+        currentCompany: p.company
+          ? {
+              name: (typeof p.company.name === "string" && p.company.name.trim()) ? p.company.name.trim() : null,
+              domain: (typeof p.company.domain === "string" && p.company.domain.trim()) ? p.company.domain.trim() : null,
+            }
+          : undefined,
       };
     });
   return { people, companyMeta };
@@ -244,13 +257,21 @@ export function findSimilarPeople(
 ): Promise<StepResult> {
   const { company, domain, jobTitle } = input;
   const country = locationCountry(input.location);
+  const biasCountry = sortCountry(input.location);
   // ContactOut returns a page of up to ~25 profiles for the same flat $0.05, so
   // we keep the whole page (the UI shows 5 + a "show more"). No extra cost.
   const LIMIT = 25;
   const titles = jobTitle ? titleVariants(jobTitle) : [];
   const steps: Array<() => Promise<StepResult>> = [];
+  // Each ContactOut step: drop ex-employees (hard), then sort in-country first
+  // (soft). The primary domain/country-filtered steps are already clean so these
+  // are no-ops there; they tighten the looser name / role-agnostic fallbacks.
   const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => ({ ...fromContactOut(r, LIMIT), cost: 0.05 }));
+    contactOutSearch(q).then((r) => {
+      const { people, companyMeta } = fromContactOut(r, LIMIT);
+      const tightened = inCountryFirst(dropExEmployees(people, company, domain), biasCountry);
+      return { people: tightened, companyMeta, cost: 0.05 };
+    });
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
 
@@ -307,6 +328,59 @@ function locationCountry(loc: string | null | undefined): string | null {
   return parts.length >= 2 ? parts[parts.length - 1] : null;
 }
 
+// The country to bias the in-country-first sort toward. Same as locationCountry,
+// but defaults to the US when the job location is missing/unparseable (per the
+// "default to US" rule) — EXCEPT for explicitly remote roles, which get no bias
+// (a remote job shouldn't favour any one country).
+function sortCountry(loc: string | null | undefined): string | null {
+  if (loc && isVirtualLocation(loc)) return null;
+  return locationCountry(loc) ?? "United States";
+}
+
+// Country equality with US-synonym normalization ("USA"/"U.S." === "United
+// States"). Both sides come from comparable sources (full country names), so a
+// normalized case-insensitive compare is enough.
+function sameCountry(a: string, b: string): boolean {
+  const norm = (s: string) => (US_HINT.test(s) ? "united states" : s.trim().toLowerCase());
+  return norm(a) === norm(b);
+}
+
+// Stable in-country-first partition (SOFT — removes nobody). Same-country people
+// move to the front so the UI's visible 5 are in-region; out-of-country (and
+// unknown-country) people follow under "show more". No-op when there's no
+// country to bias toward (e.g. remote roles).
+function inCountryFirst(people: Person[], country: string | null): Person[] {
+  if (!country) return people;
+  const here: Person[] = [];
+  const rest: Person[] = [];
+  for (const p of people) {
+    if (p.country && sameCountry(p.country, country)) here.push(p);
+    else rest.push(p);
+  }
+  return [...here, ...rest];
+}
+
+// Drop people whose CURRENT employer isn't the target company (HARD). The
+// company-name and role-agnostic ContactOut steps surface people who only EVER
+// worked there (and changed jobs). Match on domain when we have one
+// (unambiguous), else on company name. Keep anyone with no current-company
+// signal rather than over-dropping.
+function dropExEmployees(
+  people: Person[],
+  company: string,
+  domain: string | null | undefined
+): Person[] {
+  const needle = company.trim().toLowerCase();
+  return people.filter((p) => {
+    if (!p.currentCompany) return true; // unknown → keep
+    const cdom = p.currentCompany.domain;
+    const cname = p.currentCompany.name;
+    if (domain && cdom) return cdom.toLowerCase() === domain.toLowerCase();
+    if (needle && cname) return cname.toLowerCase().includes(needle);
+    return true; // no usable signal → keep
+  });
+}
+
 // Recruiters / talent at the company — target 3. Domain-first, same as the
 // people finder: match recruiters at the exact domain first, then fall back to
 // the company name + Coresignal only if that found nobody (so an imperfect
@@ -321,11 +395,17 @@ function locationCountry(loc: string | null | undefined): string | null {
 export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const { company, domain } = input;
   const country = locationCountry(input.location);
+  const biasCountry = sortCountry(input.location);
   // Keep the full page (flat $0.05); UI shows 5 + "show more".
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
+  // Drop ex-employees (hard) + sort in-country first (soft), same as people.
   const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => ({ ...fromContactOut(r, LIMIT), cost: 0.05 }));
+    contactOutSearch(q).then((r) => {
+      const { people, companyMeta } = fromContactOut(r, LIMIT);
+      const tightened = inCountryFirst(dropExEmployees(people, company, domain), biasCountry);
+      return { people: tightened, companyMeta, cost: 0.05 };
+    });
   const cs = (q: Record<string, unknown>) =>
     coresignalSearch(q).then((r) => ({ people: fromCoresignal(r, LIMIT, company), companyMeta: null, cost: 0.021 }));
 
@@ -347,8 +427,14 @@ export function findAlumni(input: FinderInput & { school: string }): Promise<Ste
   const { company, domain, school } = input;
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
+  // Drop ex-employees (hard) so an alum who left the company isn't surfaced; no
+  // country sort — you'd reach out to a school alum at the company wherever they
+  // now live.
   const co = (q: Record<string, unknown>) =>
-    contactOutSearch(q).then((r) => ({ ...fromContactOut(r, LIMIT), cost: 0.05 }));
+    contactOutSearch(q).then((r) => {
+      const { people, companyMeta } = fromContactOut(r, LIMIT);
+      return { people: dropExEmployees(people, company, domain), companyMeta, cost: 0.05 };
+    });
   if (domain) steps.push(() => co({ domain: [domain], education: [school] }));
   steps.push(() => co({ company: [company], education: [school] }));
   return waterfall("alumni", steps);
