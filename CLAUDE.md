@@ -29,7 +29,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - `client.ts` — composite fingerprint builder + `apiPost()` + `errorMessage()`.
 - Limits per visitor (24h reset): search / alumni / enrich / profile **10/day** each; global cap **$40/day**.
 
-**Search flow** (`app/page.tsx` → `app/api/search/route.ts`):
+**Search flow** (`app/page.tsx` → `app/api/search/route.ts`): the route takes **either** `{ jobUrl }` (resolve a link) **or** `{ company, role?, location? }` (**manual search** — the fallback when a link can't be read, and an always-available "search by company instead" toggle in `SearchForm`). Both paths converge on the shared `runPeopleSearch({ company, domain, jobTitle, jobLocation })` helper (two waterfalls → recruiter de-dup → response), so results render identically. Manual passes `domain: null` (company-name search), `normalizeCompany(company)`, and defaults location to US when blank; company is required (≤100 chars), role/location optional. The manual form auto-reveals in the UI when a URL search returns **422/502** (`page.tsx` `showManual`). ContactOut's fuzzy company matching tolerates acronyms (JPMC→25, GS→8), so no name-canonicalization layer is needed; a one-line UI hint nudges users toward the common name over a ticker.
 1. **`resolveJob(rawUrl)`** (`lib/jobResolver.ts`) → `{ jobTitle, companyName, domain, jobLocation }`:
    - LinkedIn → `canonicalizeLinkedInJobUrl` (handles both `/jobs/view/{id}` and slug URLs `/jobs/view/title-at-company-{id}/`) → Edges `linkedin-extract-job` ($0.09).
    - Everything else → Serper Scrape ($0.02, renders JS) → (a) JSON-LD `JobPosting` free parse, (b) OG/page title heuristic free ("Title at Company" pattern), (c) ScrapeGraphAI LLM extract ($0.025).

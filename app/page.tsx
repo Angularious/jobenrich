@@ -117,6 +117,8 @@ export default function Home() {
   const [jobUrl, setJobUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Manual search (company + role) — the fallback when a link can't be read.
+  const [showManual, setShowManual] = useState(false);
 
   const [sessions, setSessions] = useState<SearchSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -204,6 +206,9 @@ export default function Home() {
       );
       if (!r.ok) {
         setError(errorMessage(r, "Something went wrong."));
+        // A link we couldn't read (422) or a scrape failure (502) → offer the
+        // manual company search. Don't reveal it for rate-limit/forbidden errors.
+        if (r.status === 422 || r.status === 502) setShowManual(true);
         return;
       }
       const newSession: SearchSession = {
@@ -214,6 +219,45 @@ export default function Home() {
       setSessions((prev) => [...prev, newSession].slice(-MAX_SESSIONS));
       setActiveId(newSession.id);
       setJobUrl("");
+      setShowManual(false);
+    } catch {
+      setError("Request failed. Check your connection.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleManualSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const honeypot = String(fd.get("website") ?? "");
+    const company = String(fd.get("company") ?? "").trim();
+    const role = String(fd.get("role") ?? "").trim();
+    const location = String(fd.get("location") ?? "").trim();
+    if (!company) {
+      setError("Enter a company name.");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const r = await apiPost<SearchResults & { error?: string }>(
+        "/api/search",
+        { company, role, location },
+        { honeypot, timed: true }
+      );
+      if (!r.ok) {
+        setError(errorMessage(r, "Something went wrong."));
+        return;
+      }
+      const newSession: SearchSession = {
+        id: makeId(),
+        jobUrl: "", // no original posting URL for a manual search
+        results: r.data,
+      };
+      setSessions((prev) => [...prev, newSession].slice(-MAX_SESSIONS));
+      setActiveId(newSession.id);
+      setShowManual(false);
     } catch {
       setError("Request failed. Check your connection.");
     } finally {
@@ -373,6 +417,9 @@ export default function Home() {
           error={error}
           onJobUrlChange={setJobUrl}
           onSubmit={handleSearch}
+          showManual={showManual}
+          onToggleManual={() => setShowManual((v) => !v)}
+          onManualSubmit={handleManualSearch}
         />
 
         {!activeSession && !loading && (
