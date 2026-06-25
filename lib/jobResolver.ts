@@ -322,6 +322,18 @@ interface WorkdayCxs {
   hiringOrganization?: { name?: string | null } | null;
 }
 
+// Some Workday tenants prefix hiringOrganization.name with an internal
+// cost-center code ("200 Protiviti Inc." is really "Protiviti" — measured:
+// ContactOut returns 0 for "200 Protiviti", 25 for "Protiviti"). Strip a
+// leading run of ≥3 digits + space. The ≥3 floor avoids eating real brands
+// that legitimately start with a small number ("84 Lumber", "3 Day Blinds");
+// a 3-digit-prefixed real brand (e.g. "100 Thieves") is a rare accepted
+// false-strip. Workday-only — other resolvers don't carry this artifact.
+function stripWorkdayCostCenter(name: string): string {
+  const stripped = name.replace(/^\d{3,}\s+/, "").trim();
+  return stripped || name; // never strip the whole name away
+}
+
 /** Map a Workday posting URL to its CXS JSON endpoint:
  *  https://{host}/[locale/]{site}/(job|details)/{jobpath}
  *    → https://{host}/wday/cxs/{tenant}/{site}/job/{jobpath}
@@ -364,7 +376,7 @@ async function resolveWorkday(rawUrl: string): Promise<ResolvedJob | null> {
       [clean(info?.location), clean(info?.country?.descriptor)].filter(Boolean).join(", ") || null;
     return {
       jobTitle: clean(info?.title),
-      companyName: normalizeCompany(companyRaw),
+      companyName: normalizeCompany(stripWorkdayCostCenter(companyRaw)),
       domain: pickDomain(null, rawUrl), // host is the ATS → null; finder uses name
       jobLocation,
       source: "workday",
