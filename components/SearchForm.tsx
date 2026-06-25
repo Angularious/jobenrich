@@ -176,15 +176,6 @@ export function SearchForm({
           </button>
         </form>
       )}
-
-      <a
-        href="https://orthogonal.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block text-center mt-3 font-mono text-[11px] font-bold uppercase tracking-widest text-acc-blue hover:bg-acc-blue hover:text-base"
-      >
-        Sign up to build your own tool →
-      </a>
     </div>
   );
 }
