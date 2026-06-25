@@ -273,7 +273,7 @@ export function findSimilarPeople(
   const co = (q: Record<string, unknown>, enforce: boolean) =>
     contactOutSearch(enforce && country ? { ...q, location: [country] } : q).then((r) => {
       const { people, companyMeta } = fromContactOut(r, LIMIT);
-      let out = dropExEmployees(people, company, domain);
+      let out = atTargetCompany(people, company);
       if (enforce && country) out = out.filter((p) => p.country && sameCountry(p.country, country));
       return { people: inCountryFirst(out, country), companyMeta, cost: 0.05 };
     });
@@ -284,7 +284,9 @@ export function findSimilarPeople(
   // The waterfall fires the next step only on zero results, so an unfiltered step
   // that returns out-of-country people would otherwise win and stop before a
   // later in-country step ever runs (this is the bug that made Coca-Cola's
-  // recruiters all Philippines). Same call count as before — reordered + filtered.
+  // recruiters all Philippines). Every step is also name-filtered to the target
+  // entity (atTargetCompany), so a mis-mapped domain can't surface a sibling's
+  // staff.
   if (country) {
     // Tier 1 — in-country, role-matched (domain first, then company name).
     if (domain && titles.length) steps.push(() => co({ domain: [domain], job_title: titles }, true));
@@ -292,13 +294,17 @@ export function findSimilarPeople(
     // Tier 2 — role-matched but country-relaxed: a person in the exact role
     // abroad is still a useful "similar person" if nobody in-country was found.
     if (titles.length) steps.push(() => co({ company: [company], job_title: titles }, false));
-    // Tier 3 — role-agnostic but back to in-country: someone at the company here.
-    steps.push(() => co(domain ? { domain: [domain] } : { company: [company] }, true));
+    // Tier 3 — role-agnostic, in-country: someone at the company here. Try the
+    // domain, THEN the company name — when the domain is mis-mapped (Coca-Cola),
+    // atTargetCompany empties the domain step and the company-name step wins.
+    if (domain) steps.push(() => co({ domain: [domain] }, true));
+    steps.push(() => co({ company: [company] }, true));
   } else {
     // No usable country (remote / unparseable): role-matched, then role-agnostic.
     if (domain && titles.length) steps.push(() => co({ domain: [domain], job_title: titles }, false));
     if (titles.length) steps.push(() => co({ company: [company], job_title: titles }, false));
-    steps.push(() => co(domain ? { domain: [domain] } : { company: [company] }, false));
+    if (domain) steps.push(() => co({ domain: [domain] }, false));
+    steps.push(() => co({ company: [company] }, false));
   }
   steps.push(() => cs({ experience_company_name: company }));
   return waterfall("similar", steps);
@@ -370,25 +376,46 @@ function inCountryFirst(people: Person[], country: string | null): Person[] {
   return [...here, ...rest];
 }
 
-// Drop people whose CURRENT employer isn't the target company (HARD). The
-// company-name and role-agnostic ContactOut steps surface people who only EVER
-// worked there (and changed jobs). Match on domain when we have one
-// (unambiguous), else on company name. Keep anyone with no current-company
-// signal rather than over-dropping.
-function dropExEmployees(
-  people: Person[],
-  company: string,
-  domain: string | null | undefined
-): Person[] {
-  const needle = company.trim().toLowerCase();
-  return people.filter((p) => {
-    if (!p.currentCompany) return true; // unknown → keep
-    const cdom = p.currentCompany.domain;
-    const cname = p.currentCompany.name;
-    if (domain && cdom) return cdom.toLowerCase() === domain.toLowerCase();
-    if (needle && cname) return cname.toLowerCase().includes(needle);
-    return true; // no usable signal → keep
-  });
+// Reduce a company name to a comparable "core": lowercase, punctuation→space
+// (so "Coca-Cola" → "coca cola"), drop articles and generic legal/structural
+// words (Inc/LLC/Company/Group/…). Leaves the distinctive tokens.
+function coreName(s: string | null | undefined): string {
+  return (s ?? "")
+    .toLowerCase()
+    .replace(/[.,/&'"()\-]/g, " ")
+    .replace(/\b(the|a|an)\b/g, " ")
+    .replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|company|co|holdings|group|plc|gmbh|sa|ag|nv|bv|llp|pte|pty)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Whether two company names refer to the SAME entity. Exact core match, or a
+// token-prefix with at most ONE extra token (so "Meta" ≈ "Meta Platforms",
+// "Google" ≈ "Google LLC") — but a regional sibling with several extra tokens
+// ("Coca-Cola" vs "Coca-Cola Europacific Aboitiz Philippines") is NOT the same.
+function sameEntity(target: string, result: string): boolean {
+  const T = coreName(target);
+  const R = coreName(result);
+  if (!T || !R) return true; // can't tell → keep
+  if (T === R) return true;
+  const tt = T.split(" ");
+  const rr = R.split(" ");
+  const [short, long] = tt.length <= rr.length ? [tt, rr] : [rr, tt];
+  const isPrefix = short.every((tok, i) => long[i] === tok);
+  return isPrefix && long.length - short.length <= 1;
+}
+
+// Keep only people whose CURRENT employer is the target company, matched by
+// NAME (HARD). This drops (a) ex-employees who changed jobs and (b) — the
+// important case — people at a DIFFERENT entity that shares the resolved domain
+// in ContactOut's data. We match on name, NOT domain, because the resolved
+// domain is often a careers-site host (e.g. `coca-colacompany.com`) that
+// ContactOut mis-maps to a sibling entity ("Coca-Cola Europacific Aboitiz
+// Philippines"), while the real employees sit on `coca-cola.com`. The company
+// NAME ("The Coca-Cola Company") is the reliable signal. Keep anyone with no
+// current-company name rather than over-dropping.
+function atTargetCompany(people: Person[], company: string): Person[] {
+  return people.filter((p) => sameEntity(company, p.currentCompany?.name ?? ""));
 }
 
 // Recruiters / talent at the company — target 3. Domain-first, same as the
@@ -414,7 +441,7 @@ export function findRecruiters(input: FinderInput): Promise<StepResult> {
   const co = (q: Record<string, unknown>, enforce: boolean) =>
     contactOutSearch(enforce && country ? { ...q, location: [country] } : q).then((r) => {
       const { people, companyMeta } = fromContactOut(r, LIMIT);
-      let out = dropExEmployees(people, company, domain);
+      let out = atTargetCompany(people, company);
       if (enforce && country) out = out.filter((p) => p.country && sameCountry(p.country, country));
       return { people: inCountryFirst(out, country), companyMeta, cost: 0.05 };
     });
@@ -444,13 +471,13 @@ export function findAlumni(input: FinderInput & { school: string }): Promise<Ste
   const { company, domain, school } = input;
   const LIMIT = 25;
   const steps: Array<() => Promise<StepResult>> = [];
-  // Drop ex-employees (hard) so an alum who left the company isn't surfaced; no
-  // country sort — you'd reach out to a school alum at the company wherever they
-  // now live.
+  // Keep only current employees of the target entity (drops alumni who've left,
+  // and a mis-mapped domain's sibling-entity staff); no country filter — you'd
+  // reach out to a school alum at the company wherever they now live.
   const co = (q: Record<string, unknown>) =>
     contactOutSearch(q).then((r) => {
       const { people, companyMeta } = fromContactOut(r, LIMIT);
-      return { people: dropExEmployees(people, company, domain), companyMeta, cost: 0.05 };
+      return { people: atTargetCompany(people, company), companyMeta, cost: 0.05 };
     });
   if (domain) steps.push(() => co({ domain: [domain], education: [school] }));
   steps.push(() => co({ company: [company], education: [school] }));
