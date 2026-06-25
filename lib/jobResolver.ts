@@ -23,7 +23,7 @@ export interface ResolvedJob {
   companyName: string;
   domain: string | null;
   jobLocation: string | null;
-  source: "linkedin" | "jsonld" | "llm" | "workday" | "google";
+  source: "linkedin" | "jsonld" | "llm" | "workday" | "google" | "oracle";
   cost: number; // real USD spent resolving this URL (for the daily-cap ledger)
 }
 
@@ -46,7 +46,7 @@ const NON_COMPANY_HOSTS =
 // IMPORTANT: this is NOT the ATS_HOSTS list — Greenhouse/Lever/Ashby/Workable/
 // SmartRecruiters scrape fine and Workday has an API, so they must stay OFF here.
 const UNSCRAPEABLE_HOSTS =
-  /(^|\.)(indeed\.com|glassdoor\.com|ziprecruiter\.com|icims\.com|taleo\.net|adp\.com)$/i;
+  /(^|\.)(indeed\.com|glassdoor\.com|ziprecruiter\.com|icims\.com|taleo\.net|adp\.com|paycomonline\.net)$/i;
 
 // Unambiguous legal forms — safe to strip even without a comma.
 const LEGAL_HARD =
@@ -441,6 +441,89 @@ function resolveGoogleCareers(rawUrl: string): ResolvedJob | null {
   return { jobTitle, companyName: "Google", domain: "google.com", jobLocation: null, source: "google", cost: 0 };
 }
 
+/* ── Oracle Recruiting Cloud branch (public Candidate-Experience API) ──── */
+
+// Oracle Recruiting Cloud (used by JPMC, Goldman, many F500) is a JS SPA; the
+// generic scraper grabs the page chrome ("…Candidate Experience page") as the
+// company, which finds nobody. The candidate-experience site has a public,
+// unauthenticated REST API for a requisition — hit it directly (same sanctioned
+// ATS-API bypass as Workday; falls back to Serper on any miss).
+const ORACLE_HOST = /(^|\.)oraclecloud\.com$/i;
+
+interface OracleCe {
+  items?: Array<{
+    Title?: string | null;
+    PrimaryLocation?: string | null;
+    LegalEmployer?: string | null;
+    Organization?: string | null;
+    CorporateDescriptionStr?: string | null;
+  }> | null;
+}
+
+/** Map an Oracle CandidateExperience posting URL to its CE REST endpoint.
+ *  …/CandidateExperience/<locale>/sites/{site}/job/{jobId} →
+ *  …/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?finder=ById;Id="{jobId}",siteNumber={site}
+ *  Returns null if it isn't a recognizable Oracle CE job posting. */
+function oracleCeUrl(rawUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!ORACLE_HOST.test(u.hostname) || !/\/CandidateExperience\//i.test(u.pathname)) return null;
+  const site = u.pathname.match(/\/sites\/([^/]+)/)?.[1];
+  const jobId = u.pathname.match(/\/job\/(\d+)/)?.[1];
+  if (!site || !jobId) return null;
+  const finder = `finder=ById;Id=%22${jobId}%22,siteNumber=${encodeURIComponent(site)}`;
+  return `${u.origin}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true&${finder}`;
+}
+
+// Oracle often leaves LegalEmployer/Organization null; the company name reliably
+// leads the CorporateDescriptionStr boilerplate ("JPMorganChase, one of the
+// oldest…"). Strip HTML and take the leading clause up to the first natural break.
+function oracleLeadCompany(html: string | null | undefined): string | null {
+  if (!html) return null;
+  const text = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const m = text.match(/^(?:At\s+)?(.+?)(?:,| is | are | offers | provides | has been |\. | - )/);
+  const name = (m ? m[1] : text).trim();
+  return name.length >= 2 && name.length <= 80 ? name : null;
+}
+
+async function resolveOracle(rawUrl: string): Promise<ResolvedJob | null> {
+  const api = oracleCeUrl(rawUrl);
+  if (!api) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 8_000);
+  try {
+    const res = await fetch(api, { headers: { Accept: "application/json" }, signal: ac.signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as OracleCe;
+    const item = data?.items?.[0];
+    if (!item) return null;
+    const companyRaw =
+      clean(item.LegalEmployer) ?? clean(item.Organization) ?? oracleLeadCompany(item.CorporateDescriptionStr);
+    if (!companyRaw) return null; // no usable company → let the generic scraper try
+    return {
+      jobTitle: clean(item.Title),
+      companyName: normalizeCompany(companyRaw),
+      domain: pickDomain(null, rawUrl), // ATS host → null; finder uses name
+      jobLocation: clean(item.PrimaryLocation),
+      source: "oracle",
+      cost: 0,
+    };
+  } catch {
+    return null; // any failure → fall back to the generic scraper
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Resolve any job/careers URL → { jobTitle, companyName, domain }. Throws on
  *  a hard upstream failure (caller maps to 502); returns an empty companyName
  *  when the page yields nothing identifiable (caller maps to 422). */
@@ -465,6 +548,11 @@ export async function resolveJob(rawUrl: string): Promise<ResolvedJob> {
   if (WORKDAY_HOST.test(hostFromUrl(rawUrl) ?? "")) {
     const wd = await resolveWorkday(rawUrl);
     if (wd) return wd;
+  }
+  // Oracle Recruiting Cloud: try its public CE API, fall back to the scraper.
+  if (ORACLE_HOST.test(hostFromUrl(rawUrl) ?? "")) {
+    const orc = await resolveOracle(rawUrl);
+    if (orc) return orc;
   }
   return resolveGeneric(rawUrl);
 }
