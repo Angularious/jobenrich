@@ -318,6 +318,7 @@ interface WorkdayCxs {
     title?: string | null;
     location?: string | null;
     country?: { descriptor?: string | null } | null;
+    jobPostingSiteId?: string | null;
   } | null;
   hiringOrganization?: { name?: string | null } | null;
 }
@@ -325,12 +326,18 @@ interface WorkdayCxs {
 // Some Workday tenants prefix hiringOrganization.name with an internal
 // cost-center code ("200 Protiviti Inc." is really "Protiviti" — measured:
 // ContactOut returns 0 for "200 Protiviti", 25 for "Protiviti"). Strip a
-// leading run of ≥3 digits + space. The ≥3 floor avoids eating real brands
-// that legitimately start with a small number ("84 Lumber", "3 Day Blinds");
-// a 3-digit-prefixed real brand (e.g. "100 Thieves") is a rare accepted
-// false-strip. Workday-only — other resolvers don't carry this artifact.
-function stripWorkdayCostCenter(name: string): string {
-  const stripped = name.replace(/^\d{3,}\s+/, "").trim();
+// leading run of ≥3 digits + space — BUT only when those digits are NOT part of
+// the public site slug (`jobPostingSiteId`). A cost-center code is an internal
+// accounting number absent from the slug ("200" ∉ "ProtivitiNA" → strip), while
+// a genuine brand number appears in it ("180" ∈ "180Medical…", "365" ∈
+// "365RetailMarkets" → keep), so real names like "180 Medical" survive. When
+// the slug is missing we DON'T strip — mangling a real name is worse than
+// leaving a rare code in place. Workday-only — other resolvers lack this.
+function stripWorkdayCostCenter(name: string, siteId: string | null): string {
+  const m = name.match(/^(\d{3,})\s+/);
+  if (!m) return name;
+  if (!siteId || siteId.includes(m[1])) return name; // brand number, or can't confirm → keep
+  const stripped = name.slice(m[0].length).trim();
   return stripped || name; // never strip the whole name away
 }
 
@@ -376,7 +383,7 @@ async function resolveWorkday(rawUrl: string): Promise<ResolvedJob | null> {
       [clean(info?.location), clean(info?.country?.descriptor)].filter(Boolean).join(", ") || null;
     return {
       jobTitle: clean(info?.title),
-      companyName: normalizeCompany(stripWorkdayCostCenter(companyRaw)),
+      companyName: normalizeCompany(stripWorkdayCostCenter(companyRaw, clean(info?.jobPostingSiteId))),
       domain: pickDomain(null, rawUrl), // host is the ATS → null; finder uses name
       jobLocation,
       source: "workday",
