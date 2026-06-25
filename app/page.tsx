@@ -518,7 +518,10 @@ export default function Home() {
               emptyMessage="No recruiters found at this company — early-stage teams often hire directly, so reach out to the people above."
             />
 
+            {/* key per session so alumni results + the school input reset when
+                switching tabs (the finder holds its own state) */}
             <AlumniFinder
+              key={activeSession.id}
               company={activeSession.results.company}
               domain={activeSession.results.domain}
               onEnrich={handleEnrich}

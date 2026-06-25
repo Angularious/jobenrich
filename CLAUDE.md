@@ -49,7 +49,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - `experience[]` / `education[]` / `bio` — powers "Pull Profile" for ContactOut results at zero additional cost (strings like "Title at Company in YYYY - Present", parsed client-side).
 - `companyMeta` (logo, employees, HQ, overview, founded, revenue) — shown in the hiring banner dropdown.
 
-**Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter. Opt-in, school not asked up front. Keeps the full page (`LIMIT = 25`); UI shows 5 + "show more". Cards support Get contact / Pull Profile like people/recruiters.
+**Alumni flow** (`AlumniFinder` → `app/api/alumni/route.ts`) — domain-first ContactOut search with education filter, then a **Coresignal fallback** (fires only if ContactOut found no alumni). ContactOut doesn't index small/new companies (measured: a tiny startup returns 0 for `company:[…]` in ContactOut but 5 employees in Coresignal), so the fallback `cs({ experience_company_name, education_institution_name: school })` surfaces alumni at companies ContactOut can't see — `fromCoresignal` prefers current-company matches. Opt-in, school not asked up front. Keeps the full page (`LIMIT = 25`); UI shows 5 + "show more". Cards support Get contact / Pull Profile like people/recruiters. **The `AlumniFinder` is keyed by `activeSession.id` in `page.tsx`** so its local state (results + school input) resets per tab — without the key, React reuses one instance and alumni leak across search tabs.
 
 **Enrich flow** (`PersonCard` "Get contact" → `app/api/enrich/route.ts` → `EnrichDrawer`) — **email only; the site never surfaces phone numbers (privacy decision)**. Three providers: **Apollo `/api/v1/people/match` ($0.01, fast)**, **Bytemine `/contacts/enrich` ($0.03, but SLOW — ~18s email-finder, 25s timeout)**, **ContactOut `/v1/people/linkedin` ($0.33, fast, `include_phone:"false"`)**. Each step fires only if no email yet.
 - **Smart ordering by speed:** Apollo always first. When the search said ContactOut has the email (`contactHint.email === true`), order is Apollo → **ContactOut** (fast) → Bytemine — so we get the email in 1–3s instead of waiting ~18s on Bytemine. Otherwise Apollo → **Bytemine** (cheap) → ContactOut. (Bytemine *is* the only source for some contacts — it returns personal emails ContactOut lacks — so it stays in the chain.)
@@ -78,7 +78,7 @@ A Next.js 16 app (deployed as **jobenrich**) that surfaces the **people behind a
 - **Resolve:** LinkedIn $0.09 · everything else $0.02 (JSON-LD) → $0.02 (OG heuristic, free step) → $0.045 (LLM fallback)
 - **People + Recruiters:** $0.05 best (first ContactOut step hits) · People ≤ ~$0.27 worst (5 ContactOut steps + Coresignal) · Recruiters ≤ ~$0.19 worst (3 ContactOut + 2 Coresignal)
 - **Search total:** LinkedIn ~$0.19 best / ~$0.55 worst · Greenhouse/careers ~$0.12 best / ~$0.55 worst. Recorded at **actual** cost; gate reserves $0.60 (resolve $0.09 + people $0.27 + recruiters $0.19 = $0.55, under the reserve).
-- **Alumni:** $0.05 → $0.10 worst (domain fallback)
+- **Alumni:** $0.05 → $0.10 (domain fallback) → ~$0.12 worst (+ Coresignal $0.021 when ContactOut has no coverage). Gate reserves $0.13.
 - **Pull Profile:** $0 for ContactOut results (already in search data) · $0.01 Apollo for Coresignal results
 - **Enrich (email only):** $0.01 Apollo → $0.04 Bytemine fallback → $0.37 worst (ContactOut $0.33, `include_phone:false`)
 - **Enrich all 8 returned:** ~$0.08 best (all Apollo) → ~$2.96 worst (all hit ContactOut)
