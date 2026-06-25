@@ -23,7 +23,7 @@ export interface ResolvedJob {
   companyName: string;
   domain: string | null;
   jobLocation: string | null;
-  source: "linkedin" | "jsonld" | "llm";
+  source: "linkedin" | "jsonld" | "llm" | "workday" | "google" | "oracle";
   cost: number; // real USD spent resolving this URL (for the daily-cap ledger)
 }
 
@@ -37,6 +37,16 @@ const ATS_HOSTS =
   /(^|\.)(myworkdayjobs\.com|bamboohr\.com|greenhouse\.io|gem\.com|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|icims\.com|jobvite\.com|taleo\.net|successfactors\.com|paylocity\.com|eddy\.com|jobs\.[a-z]+)$/i;
 const NON_COMPANY_HOSTS =
   /(^|\.)(linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|crunchbase\.com|glassdoor\.com|indeed\.com|youtube\.com)$/i;
+
+// Hosts that consistently DEFEAT automated reading — consumer aggregators with
+// anti-bot walls (Serper hangs to the scrape timeout) and login-gated
+// application portals. We fast-fail these to the UNREADABLE guidance instead of
+// burning ~25s + $0.02 on a scrape that won't succeed. (Measured this session:
+// indeed/glassdoor/ziprecruiter time out; ADP/iCIMS/Taleo are login-gated.)
+// IMPORTANT: this is NOT the ATS_HOSTS list — Greenhouse/Lever/Ashby/Workable/
+// SmartRecruiters scrape fine and Workday has an API, so they must stay OFF here.
+const UNSCRAPEABLE_HOSTS =
+  /(^|\.)(indeed\.com|glassdoor\.com|ziprecruiter\.com|icims\.com|taleo\.net|adp\.com|paycomonline\.net)$/i;
 
 // Unambiguous legal forms — safe to strip even without a comma.
 const LEGAL_HARD =
@@ -303,16 +313,263 @@ async function resolveGeneric(url: string): Promise<ResolvedJob> {
   return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm", cost };
 }
 
+/* ── Workday branch (public CXS JSON API) ────────────────────────────── */
+
+// Workday career sites are JS SPAs that the generic scraper renders only
+// flakily (intermittent "Scraping failed" 500s). Every Workday tenant exposes a
+// public, unauthenticated JSON API for a posting, which is deterministic and
+// free — so we hit it directly. This is the one place we bypass callOrthogonal:
+// it's a public ATS endpoint, not paid/Orthogonal provider data, and Serper
+// refuses JSON URLs (400) so it can't be proxied through the wrapper.
+const WORKDAY_HOST = /(^|\.)myworkdayjobs\.com$/i;
+
+interface WorkdayCxs {
+  jobPostingInfo?: {
+    title?: string | null;
+    location?: string | null;
+    country?: { descriptor?: string | null } | null;
+    jobPostingSiteId?: string | null;
+  } | null;
+  hiringOrganization?: { name?: string | null } | null;
+}
+
+// Some Workday tenants prefix hiringOrganization.name with an internal
+// cost-center code ("200 Protiviti Inc." is really "Protiviti" — measured:
+// ContactOut returns 0 for "200 Protiviti", 25 for "Protiviti"). Strip a
+// leading run of ≥3 digits + space — BUT only when those digits are NOT part of
+// the public site slug (`jobPostingSiteId`). A cost-center code is an internal
+// accounting number absent from the slug ("200" ∉ "ProtivitiNA" → strip), while
+// a genuine brand number appears in it ("180" ∈ "180Medical…", "365" ∈
+// "365RetailMarkets" → keep), so real names like "180 Medical" survive. When
+// the slug is missing we DON'T strip — mangling a real name is worse than
+// leaving a rare code in place. Workday-only — other resolvers lack this.
+function stripWorkdayCostCenter(name: string, siteId: string | null): string {
+  const m = name.match(/^(\d{3,})\s+/);
+  if (!m) return name;
+  if (!siteId || siteId.includes(m[1])) return name; // brand number, or can't confirm → keep
+  const stripped = name.slice(m[0].length).trim();
+  return stripped || name; // never strip the whole name away
+}
+
+/** Map a Workday posting URL to its CXS JSON endpoint:
+ *  https://{host}/[locale/]{site}/(job|details)/{jobpath}
+ *    → https://{host}/wday/cxs/{tenant}/{site}/job/{jobpath}
+ *  Returns null if the URL isn't a recognizable Workday job posting. */
+export function workdayCxsUrl(rawUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!WORKDAY_HOST.test(u.hostname)) return null;
+  const tenant = u.hostname.split(".")[0];
+  const parts = u.pathname.split("/").filter(Boolean);
+  // The site segment sits directly before the "job"/"details" marker (any
+  // leading locale like "en-US" is thus skipped automatically).
+  const marker = parts.findIndex((p) => p === "job" || p === "details");
+  if (marker < 1) return null;
+  const site = parts[marker - 1];
+  const jobPath = parts.slice(marker + 1).join("/");
+  if (!tenant || !site || !jobPath) return null;
+  return `${u.origin}/wday/cxs/${tenant}/${site}/job/${jobPath}`;
+}
+
+async function resolveWorkday(rawUrl: string): Promise<ResolvedJob | null> {
+  const cxs = workdayCxsUrl(rawUrl);
+  if (!cxs) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 8_000);
+  try {
+    const res = await fetch(cxs, { headers: { Accept: "application/json" }, signal: ac.signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as WorkdayCxs;
+    const info = data?.jobPostingInfo;
+    const companyRaw = clean(data?.hiringOrganization?.name);
+    if (!companyRaw) return null; // no company → let the generic scraper try
+    // Combine the location label with the country so the people finder can
+    // country-ify it (e.g. "Waltham Office (POST), United States of America") —
+    // but skip the append when the location label already names the country
+    // (Workday's `location` often ends with it → "…, USA, USA" otherwise).
+    const loc = clean(info?.location);
+    const country = clean(info?.country?.descriptor);
+    const jobLocation =
+      loc && country && !loc.toLowerCase().includes(country.toLowerCase())
+        ? `${loc}, ${country}`
+        : loc || country || null;
+    return {
+      jobTitle: clean(info?.title),
+      companyName: normalizeCompany(stripWorkdayCostCenter(companyRaw, clean(info?.jobPostingSiteId))),
+      domain: null, // host is the ATS (myworkdayjobs.com) → no company domain; finder uses name
+      jobLocation,
+      source: "workday",
+      cost: 0,
+    };
+  } catch {
+    return null; // any failure → fall back to the generic scraper
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ── Google Careers branch (slug parse) ──────────────────────────────── */
+
+// Serper refuses to scrape google.com ("Invalid 'url' parameter - Google is not
+// allowed"), so the generic path can never resolve Google's own careers
+// postings. We don't need it: the company is Google, and the title is in the URL
+// slug (/jobs/results/{id}-{title-slug}/). Parse it directly — no network call,
+// deterministic, free. (Location isn't in the URL → null → finder defaults to
+// US, same as any role with no stated country.)
+function resolveGoogleCareers(rawUrl: string): ResolvedJob | null {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  // google.com/about/careers/… (current) or careers.google.com/… (legacy) —
+  // both are Google's own careers site with the same /jobs/results/{id}-{slug} shape.
+  const onGoogleCareers =
+    (/^(www\.)?google\.com$/i.test(u.hostname) && /\/about\/careers\//i.test(u.pathname)) ||
+    /^careers\.google\.com$/i.test(u.hostname);
+  if (!onGoogleCareers) return null;
+  const m = u.pathname.match(/\/jobs\/results\/\d+-([^/]+)/);
+  let jobTitle: string | null = null;
+  if (m) {
+    let slug = m[1];
+    try {
+      slug = decodeURIComponent(slug);
+    } catch {
+      /* malformed %-encoding — use the raw slug */
+    }
+    jobTitle = slug.replace(/-/g, " ").trim() || null;
+  }
+  return { jobTitle, companyName: "Google", domain: "google.com", jobLocation: null, source: "google", cost: 0 };
+}
+
+/* ── Oracle Recruiting Cloud branch (public Candidate-Experience API) ──── */
+
+// Oracle Recruiting Cloud (used by JPMC, Goldman, many F500) is a JS SPA; the
+// generic scraper grabs the page chrome ("…Candidate Experience page") as the
+// company, which finds nobody. The candidate-experience site has a public,
+// unauthenticated REST API for a requisition — hit it directly (same sanctioned
+// ATS-API bypass as Workday; falls back to Serper on any miss).
+const ORACLE_HOST = /(^|\.)oraclecloud\.com$/i;
+
+interface OracleCe {
+  items?: Array<{
+    Title?: string | null;
+    PrimaryLocation?: string | null;
+    LegalEmployer?: string | null;
+    Organization?: string | null;
+    CorporateDescriptionStr?: string | null;
+  }> | null;
+}
+
+/** Map an Oracle CandidateExperience posting URL to its CE REST endpoint.
+ *  …/CandidateExperience/<locale>/sites/{site}/job/{jobId} →
+ *  …/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?finder=ById;Id="{jobId}",siteNumber={site}
+ *  Returns null if it isn't a recognizable Oracle CE job posting. */
+function oracleCeUrl(rawUrl: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!ORACLE_HOST.test(u.hostname) || !/\/CandidateExperience\//i.test(u.pathname)) return null;
+  const site = u.pathname.match(/\/sites\/([^/]+)/)?.[1];
+  const jobId = u.pathname.match(/\/job\/(\d+)/)?.[1];
+  if (!site || !jobId) return null;
+  const finder = `finder=ById;Id=%22${jobId}%22,siteNumber=${encodeURIComponent(site)}`;
+  return `${u.origin}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true&${finder}`;
+}
+
+// Oracle often leaves LegalEmployer/Organization null; SOMETIMES the company
+// name leads the CorporateDescriptionStr boilerplate ("JPMorganChase, one of the
+// oldest…"). Strip HTML and take the leading clause up to the first natural
+// break — but the description is just as often marketing prose that does NOT
+// open with the bare brand ("Only Oracle brings together the data, …"), which
+// would otherwise become a sentence-fragment "company" → 0 people. So we REJECT
+// anything that looks like prose (leading stop-word or too many words) and
+// return null, letting resolveOracle fall back to the generic scraper instead
+// of surfacing garbage. A real brand is short and doesn't start with a stop-word.
+const PROSE_LEAD = /^(only|we|our|join|founded|with|today|about|whether|since|established|headquartered|at|as|for|the\s+world|a\s+|an\s+)/i;
+function oracleLeadCompany(html: string | null | undefined): string | null {
+  if (!html) return null;
+  const text = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const m = text.match(/^(?:At\s+)?(.+?)(?:,| is | are | offers | provides | has been |\. | - )/);
+  const name = (m ? m[1] : text).trim();
+  if (name.length < 2 || name.length > 80) return null;
+  // Prose, not a name: starts with a sentence stop-word, or runs long (a brand
+  // is rarely >5 words — "Ernst & Young Global Limited" is 5).
+  if (PROSE_LEAD.test(name) || name.split(/\s+/).length > 5) return null;
+  return name;
+}
+
+async function resolveOracle(rawUrl: string): Promise<ResolvedJob | null> {
+  const api = oracleCeUrl(rawUrl);
+  if (!api) return null;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 8_000);
+  try {
+    const res = await fetch(api, { headers: { Accept: "application/json" }, signal: ac.signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as OracleCe;
+    const item = data?.items?.[0];
+    if (!item) return null;
+    const companyRaw =
+      clean(item.LegalEmployer) ?? clean(item.Organization) ?? oracleLeadCompany(item.CorporateDescriptionStr);
+    if (!companyRaw) return null; // no usable company → let the generic scraper try
+    return {
+      jobTitle: clean(item.Title),
+      companyName: normalizeCompany(companyRaw),
+      domain: null, // host is the ATS (oraclecloud.com, not in ATS_HOSTS) → no company domain; finder uses name
+      jobLocation: clean(item.PrimaryLocation),
+      source: "oracle",
+      cost: 0,
+    };
+  } catch {
+    return null; // any failure → fall back to the generic scraper
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Resolve any job/careers URL → { jobTitle, companyName, domain }. Throws on
  *  a hard upstream failure (caller maps to 502); returns an empty companyName
  *  when the page yields nothing identifiable (caller maps to 422). */
-export function resolveJob(rawUrl: string): Promise<ResolvedJob> {
+export async function resolveJob(rawUrl: string): Promise<ResolvedJob> {
   if (isLinkedInHost(rawUrl)) {
     const canonical = canonicalizeLinkedInJobUrl(rawUrl);
     if (canonical) return resolveLinkedIn(canonical);
     // A LinkedIn URL that isn't a job posting (profile, /company, feed) — the
     // generic scraper would just hit the auth wall, so don't spend on it.
-    return Promise.resolve({ jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin", cost: 0 });
+    return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "linkedin", cost: 0 };
+  }
+  // Google careers: Serper blocks google.com, but the slug carries the title.
+  const goog = resolveGoogleCareers(rawUrl);
+  if (goog) return goog;
+  // Known-unscrapeable hosts (anti-bot aggregators, login-gated portals): skip
+  // the doomed ~25s scrape and signal "unreadable" instantly (caller → 422 +
+  // guidance to use LinkedIn/Greenhouse/Workday/a careers page). cost 0.
+  if (UNSCRAPEABLE_HOSTS.test(hostFromUrl(rawUrl) ?? "")) {
+    return { jobTitle: null, companyName: "", domain: null, jobLocation: null, source: "llm", cost: 0 };
+  }
+  // Workday: try the deterministic JSON API first, fall back to the scraper.
+  if (WORKDAY_HOST.test(hostFromUrl(rawUrl) ?? "")) {
+    const wd = await resolveWorkday(rawUrl);
+    if (wd) return wd;
+  }
+  // Oracle Recruiting Cloud: try its public CE API, fall back to the scraper.
+  if (ORACLE_HOST.test(hostFromUrl(rawUrl) ?? "")) {
+    const orc = await resolveOracle(rawUrl);
+    if (orc) return orc;
   }
   return resolveGeneric(rawUrl);
 }
