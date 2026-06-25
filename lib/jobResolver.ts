@@ -388,13 +388,19 @@ async function resolveWorkday(rawUrl: string): Promise<ResolvedJob | null> {
     const companyRaw = clean(data?.hiringOrganization?.name);
     if (!companyRaw) return null; // no company → let the generic scraper try
     // Combine the location label with the country so the people finder can
-    // country-ify it (e.g. "Waltham Office (POST), United States of America").
+    // country-ify it (e.g. "Waltham Office (POST), United States of America") —
+    // but skip the append when the location label already names the country
+    // (Workday's `location` often ends with it → "…, USA, USA" otherwise).
+    const loc = clean(info?.location);
+    const country = clean(info?.country?.descriptor);
     const jobLocation =
-      [clean(info?.location), clean(info?.country?.descriptor)].filter(Boolean).join(", ") || null;
+      loc && country && !loc.toLowerCase().includes(country.toLowerCase())
+        ? `${loc}, ${country}`
+        : loc || country || null;
     return {
       jobTitle: clean(info?.title),
       companyName: normalizeCompany(stripWorkdayCostCenter(companyRaw, clean(info?.jobPostingSiteId))),
-      domain: pickDomain(null, rawUrl), // host is the ATS → null; finder uses name
+      domain: null, // host is the ATS (myworkdayjobs.com) → no company domain; finder uses name
       jobLocation,
       source: "workday",
       cost: 0,
@@ -479,9 +485,16 @@ function oracleCeUrl(rawUrl: string): string | null {
   return `${u.origin}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true&${finder}`;
 }
 
-// Oracle often leaves LegalEmployer/Organization null; the company name reliably
-// leads the CorporateDescriptionStr boilerplate ("JPMorganChase, one of the
-// oldest…"). Strip HTML and take the leading clause up to the first natural break.
+// Oracle often leaves LegalEmployer/Organization null; SOMETIMES the company
+// name leads the CorporateDescriptionStr boilerplate ("JPMorganChase, one of the
+// oldest…"). Strip HTML and take the leading clause up to the first natural
+// break — but the description is just as often marketing prose that does NOT
+// open with the bare brand ("Only Oracle brings together the data, …"), which
+// would otherwise become a sentence-fragment "company" → 0 people. So we REJECT
+// anything that looks like prose (leading stop-word or too many words) and
+// return null, letting resolveOracle fall back to the generic scraper instead
+// of surfacing garbage. A real brand is short and doesn't start with a stop-word.
+const PROSE_LEAD = /^(only|we|our|join|founded|with|today|about|whether|since|established|headquartered|at|as|for|the\s+world|a\s+|an\s+)/i;
 function oracleLeadCompany(html: string | null | undefined): string | null {
   if (!html) return null;
   const text = html
@@ -492,7 +505,11 @@ function oracleLeadCompany(html: string | null | undefined): string | null {
     .trim();
   const m = text.match(/^(?:At\s+)?(.+?)(?:,| is | are | offers | provides | has been |\. | - )/);
   const name = (m ? m[1] : text).trim();
-  return name.length >= 2 && name.length <= 80 ? name : null;
+  if (name.length < 2 || name.length > 80) return null;
+  // Prose, not a name: starts with a sentence stop-word, or runs long (a brand
+  // is rarely >5 words — "Ernst & Young Global Limited" is 5).
+  if (PROSE_LEAD.test(name) || name.split(/\s+/).length > 5) return null;
+  return name;
 }
 
 async function resolveOracle(rawUrl: string): Promise<ResolvedJob | null> {
@@ -512,7 +529,7 @@ async function resolveOracle(rawUrl: string): Promise<ResolvedJob | null> {
     return {
       jobTitle: clean(item.Title),
       companyName: normalizeCompany(companyRaw),
-      domain: pickDomain(null, rawUrl), // ATS host → null; finder uses name
+      domain: null, // host is the ATS (oraclecloud.com, not in ATS_HOSTS) → no company domain; finder uses name
       jobLocation: clean(item.PrimaryLocation),
       source: "oracle",
       cost: 0,
