@@ -3,7 +3,7 @@ import { isValidJobUrl, isLinkedInHost } from "@/lib/validation";
 import { resolveJob, normalizeCompany } from "@/lib/jobResolver";
 import { guardRequest, type GuardBody } from "@/lib/security/guard";
 import { findSimilarPeople, findRecruiters, simplifyJobTitle } from "@/lib/people";
-import { QuotaExceededError } from "@/lib/orthogonal";
+import { QuotaExceededError, UpstreamRateLimitedError } from "@/lib/orthogonal";
 
 const MAX_URL_LEN = 2000;
 // Manual-search free-text fields (company / role / location). Short cap — these
@@ -15,6 +15,12 @@ const MAX_MANUAL_LEN = 100;
 // at sources that work instead of leaving them guessing.
 const UNREADABLE_MSG =
   "We couldn't read that link — some application portals (e.g. ADP) block automated reading. Try the role on LinkedIn, or a Greenhouse, Workday, or company careers page link.";
+
+// Shown when the LinkedIn extractor itself is temporarily rate-limited
+// upstream (not a bad link — see api-learnings/edges.md). Self-clears, so
+// point the user at the manual fallback rather than implying the link is bad.
+const RATE_LIMITED_MSG =
+  "LinkedIn lookups are temporarily capped — search by company instead.";
 
 // Resolve (scrape/extract) + two parallel waterfalls can chain several upstream
 // calls; give it headroom (Hobby+Fluid allows up to 300s).
@@ -146,6 +152,11 @@ export async function POST(request: Request) {
       spentUsd += isLinkedInHost(rawUrl) ? 0.09 : 0.045;
       if (err instanceof QuotaExceededError) {
         return NextResponse.json({ error: "Usage limit reached — try again later." }, { status: 503 });
+      }
+      if (err instanceof UpstreamRateLimitedError) {
+        console.error("[search] Job resolution rate-limited upstream:", err);
+        // Keep 502 (not 503) so the manual-search fallback UI still auto-shows.
+        return NextResponse.json({ error: RATE_LIMITED_MSG }, { status: 502 });
       }
       console.error("[search] Job resolution failed:", err);
       return NextResponse.json({ error: UNREADABLE_MSG }, { status: 502 });
