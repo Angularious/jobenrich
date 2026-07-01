@@ -83,7 +83,7 @@ export function SearchForm({
             placeholder={EXAMPLES[exampleIdx]}
             aria-label="Job posting or careers page URL"
             required
-            className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
+            className="w-full px-4 py-3 bg-transparent font-bold text-[16px] text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
           />
         </div>
 
@@ -119,7 +119,7 @@ export function SearchForm({
       <button
         type="button"
         onClick={onToggleManual}
-        className="block w-full text-center mt-4 font-mono text-[11px] font-bold uppercase tracking-widest text-acc-blue hover:bg-acc-blue hover:text-base"
+        className="block w-full text-center mt-4 py-3 font-mono text-[11px] font-bold uppercase tracking-widest text-acc-blue hover:bg-acc-blue hover:text-base"
       >
         {showManual ? "▴ Hide manual search" : "▾ Or search by company instead"}
       </button>
@@ -139,7 +139,7 @@ export function SearchForm({
               maxLength={100}
               placeholder="Company — e.g. JPMorgan"
               aria-label="Company name"
-              className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
+              className="w-full px-4 py-3 bg-transparent font-bold text-[16px] text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
             />
           </div>
           <div className="nb-input mb-2" style={{ ["--nb" as string]: "var(--color-acc-blue)" }}>
@@ -149,7 +149,7 @@ export function SearchForm({
               maxLength={100}
               placeholder="Role title (optional) — e.g. software engineer"
               aria-label="Role title (optional)"
-              className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
+              className="w-full px-4 py-3 bg-transparent font-bold text-[16px] text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
             />
           </div>
           <div className="nb-input mb-2" style={{ ["--nb" as string]: "var(--color-acc-blue)" }}>
@@ -159,7 +159,7 @@ export function SearchForm({
               maxLength={100}
               placeholder="Location (optional) — e.g. London"
               aria-label="Location (optional)"
-              className="w-full px-4 py-3 bg-transparent font-bold text-sm text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
+              className="w-full px-4 py-3 bg-transparent font-bold text-[16px] text-ink outline-none placeholder:text-dim placeholder:font-normal font-mono"
             />
           </div>
           <p className="font-mono text-[10px] text-dim mb-3 text-center">
